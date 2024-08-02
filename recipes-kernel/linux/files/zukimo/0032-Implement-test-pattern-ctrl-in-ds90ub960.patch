@@ -1,0 +1,211 @@
+From b21110d7ed7a52d9875da2f9927c261563f92098 Mon Sep 17 00:00:00 2001
+From: Jan Meyer-Siemon <Jan.Meyer-Siemon@dreamchip.de>
+Date: Mon, 3 Jun 2024 13:20:43 +0200
+Subject: [PATCH 32/34] Implement test pattern ctrl in ds90ub960
+
+Upstream-Status: Pending
+---
+ drivers/media/i2c/ds90ub960.c | 164 +++++++++++++++++++++++++++++++++-
+ 1 file changed, 163 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/media/i2c/ds90ub960.c b/drivers/media/i2c/ds90ub960.c
+index bd962ffb6b25..39cf06114826 100644
+--- a/drivers/media/i2c/ds90ub960.c
++++ b/drivers/media/i2c/ds90ub960.c
+@@ -572,6 +572,22 @@ static inline struct ub960_data *sd_to_ub960(struct v4l2_subdev *sd)
+ 	return container_of(sd, struct ub960_data, sd);
+ }
+ 
++enum {
++	TEST_PATTERN_DISABLED = 0,
++	TEST_PATTERN_V_COLOR_BARS_1,
++	TEST_PATTERN_V_COLOR_BARS_2,
++	TEST_PATTERN_V_COLOR_BARS_4,
++	TEST_PATTERN_V_COLOR_BARS_8,
++};
++
++static const char * const ub960_tpg_qmenu[] = {
++	"Disabled",
++	"1 vertical color bar",
++	"2 vertical color bars",
++	"4 vertical color bars",
++	"8 vertical color bars",
++};
++
+ static inline bool ub960_pad_is_sink(struct ub960_data *priv, u32 pad)
+ {
+ 	return pad < priv->hw_data->num_rxports;
+@@ -1014,6 +1030,38 @@ static int ub960_write_ind(struct ub960_data *priv, u8 block, u8 reg, u8 val)
+ 	return ret;
+ }
+ 
++static int ub960_write_ind16(struct ub960_data *priv, u8 block, u8 reg, u16 val)
++{
++	int ret;
++
++	mutex_lock(&priv->reg_lock);
++
++	ret = ub960_select_ind_reg_block(priv, block);
++	if (ret)
++		goto out;
++
++	ret = regmap_write(priv->regmap, UB960_SR_IND_ACC_ADDR, reg);
++	if (ret)
++		goto out;
++
++	ret = regmap_write(priv->regmap, UB960_SR_IND_ACC_DATA, val >> 8);
++	if (ret)
++		goto out;
++
++	ret = regmap_write(priv->regmap, UB960_SR_IND_ACC_ADDR, reg + 1);
++	if (ret)
++		goto out;
++
++	ret = regmap_write(priv->regmap, UB960_SR_IND_ACC_DATA, val & 0xff);
++	if (ret)
++		goto out;
++
++out:
++	mutex_unlock(&priv->reg_lock);
++
++	return ret;
++}
++
+ static int ub960_ind_update_bits(struct ub960_data *priv, u8 block, u8 reg,
+ 				 u8 mask, u8 val)
+ {
+@@ -3171,6 +3219,115 @@ static const struct media_entity_operations ub960_entity_ops = {
+ 	.has_pad_interdep = v4l2_subdev_has_pad_interdep,
+ };
+ 
++static void ub960_enable_tpg(struct ub960_data *priv, int tpg_num)
++{
++	/*
++	 * Note: no need to write UB960_REG_IND_ACC_CTL: the only indirect
++	 * registers target we use is "CSI-2 Pattern Generator & Timing
++	 * Registers", which is the default
++	 */
++
++	/*
++	 * TPG can only provide a single stream per CSI TX port. If
++	 * multiple streams are currently enabled, only the first
++	 * one will use the TPG, other streams will be halted.
++	 */
++
++	struct v4l2_mbus_framefmt *fmt;
++	u8 vbp, vfp;
++	u16 blank_lines;
++	u16 width;
++	u16 height;
++
++	u16 bytespp = 2; /* For MEDIA_BUS_FMT_UYVY8_1X16 */
++	u8 cbars_idx = tpg_num - TEST_PATTERN_V_COLOR_BARS_1;
++	u8 num_cbars = 1 << cbars_idx;
++
++	u16 line_size;	/* Line size [bytes] */
++	u16 bar_size;	/* cbar size [bytes] */
++	u16 act_lpf;	/* active lines/frame */
++	u16 tot_lpf;	/* tot lines/frame */
++	u16 line_pd;	/* Line period in 10-ns units */
++
++	struct v4l2_subdev_state *state;
++
++	state = v4l2_subdev_get_locked_active_state(&priv->sd);
++
++	vbp = 33;
++	vfp = 10;
++	blank_lines = vbp + vfp + 2; /* total blanking lines */
++
++	fmt = v4l2_subdev_state_get_stream_format(state, 4, 0);
++	if (!fmt) {
++		dev_err(&priv->client->dev, "failed to enable TPG\n");
++		return;
++	}
++
++	width = fmt->width;
++	height = fmt->height;
++
++	line_size = width * bytespp;
++	bar_size = line_size / num_cbars;
++	act_lpf = height;
++	tot_lpf = act_lpf + blank_lines;
++	line_pd = 100000000 / 60 / tot_lpf;
++
++	/* Disable forwarding from FPD-3 RX ports */
++	ub960_read(priv, UB960_SR_FWD_CTL1, &priv->stored_fwd_ctl);
++	ub960_write(priv, UB960_SR_FWD_CTL1, 0xf << 4);
++
++	ub960_write_ind(priv, UB960_IND_TARGET_PAT_GEN, UB960_IR_PGEN_CTL,
++			UB960_IR_PGEN_CTL_PGEN_ENABLE);
++
++	/* YUV422 8bit: 2 bytes/block, CSI-2 data type 0x1e */
++	ub960_write_ind(priv, UB960_IND_TARGET_PAT_GEN, UB960_IR_PGEN_CFG,
++			cbars_idx << 4 | 0x2);
++	ub960_write_ind(priv, UB960_IND_TARGET_PAT_GEN, UB960_IR_PGEN_CSI_DI,
++			0x1e);
++
++	ub960_write_ind16(priv, UB960_IND_TARGET_PAT_GEN,
++			  UB960_IR_PGEN_LINE_SIZE1, line_size);
++	ub960_write_ind16(priv, UB960_IND_TARGET_PAT_GEN,
++			  UB960_IR_PGEN_BAR_SIZE1, bar_size);
++	ub960_write_ind16(priv, UB960_IND_TARGET_PAT_GEN,
++			  UB960_IR_PGEN_ACT_LPF1, act_lpf);
++	ub960_write_ind16(priv, UB960_IND_TARGET_PAT_GEN,
++			  UB960_IR_PGEN_TOT_LPF1, tot_lpf);
++	ub960_write_ind16(priv, UB960_IND_TARGET_PAT_GEN,
++			  UB960_IR_PGEN_LINE_PD1, line_pd);
++	ub960_write_ind(priv, UB960_IND_TARGET_PAT_GEN, UB960_IR_PGEN_VBP, vbp);
++	ub960_write_ind(priv, UB960_IND_TARGET_PAT_GEN, UB960_IR_PGEN_VFP, vfp);
++}
++
++static void ub960_disable_tpg(struct ub960_data *priv)
++{
++	/* TPG off, enable forwarding from FPD-3 RX ports */
++	ub960_write(priv, UB960_SR_FWD_CTL1, priv->stored_fwd_ctl);
++
++	ub960_write_ind(priv, UB960_IND_TARGET_PAT_GEN, UB960_IR_PGEN_CTL, 0x00);
++}
++
++static int ub960_s_ctrl(struct v4l2_ctrl *ctrl)
++{
++	struct ub960_data *priv =
++		container_of(ctrl->handler, struct ub960_data, ctrl_handler);
++
++	switch (ctrl->id) {
++	case V4L2_CID_TEST_PATTERN:
++		if (ctrl->val == 0)
++			ub960_disable_tpg(priv);
++		else
++			ub960_enable_tpg(priv, ctrl->val);
++		break;
++	}
++
++	return 0;
++}
++
++static const struct v4l2_ctrl_ops ub960_ctrl_ops = {
++	.s_ctrl = ub960_s_ctrl,
++};
++
+ /* -----------------------------------------------------------------------------
+  * Core
+  */
+@@ -3716,9 +3873,14 @@ static int ub960_create_subdev(struct ub960_data *priv)
+ 
+ 	v4l2_i2c_subdev_init(&priv->sd, priv->client, &ub960_subdev_ops);
+ 
+-	v4l2_ctrl_handler_init(&priv->ctrl_handler, 1);
++	v4l2_ctrl_handler_init(&priv->ctrl_handler, 2);
+ 	priv->sd.ctrl_handler = &priv->ctrl_handler;
+ 
++	v4l2_ctrl_new_std_menu_items(&priv->ctrl_handler, &ub960_ctrl_ops,
++				     V4L2_CID_TEST_PATTERN,
++				     ARRAY_SIZE(ub960_tpg_qmenu) - 1, 0, 0,
++				     ub960_tpg_qmenu);
++
+ 	v4l2_ctrl_new_int_menu(&priv->ctrl_handler, NULL, V4L2_CID_LINK_FREQ,
+ 			       ARRAY_SIZE(priv->tx_link_freq) - 1, 0,
+ 			       priv->tx_link_freq);
+-- 
+2.34.1
+

@@ -1,0 +1,49 @@
+From 8c230e854c1aaac2b89890e344d13e44cabc9888 Mon Sep 17 00:00:00 2001
+From: Stefan Stuerke <stefan.stuerke@dreamchip.de>
+Date: Thu, 2 May 2024 11:36:44 +0200
+Subject: [PATCH 31/34] Add bindings for Zukimo clocks
+
+Upstream-Status: Pending
+---
+ include/dt-bindings/clock/zukimo_clock.h | 29 ++++++++++++++++++++++++
+ 1 file changed, 29 insertions(+)
+ create mode 100644 include/dt-bindings/clock/zukimo_clock.h
+
+diff --git a/include/dt-bindings/clock/zukimo_clock.h b/include/dt-bindings/clock/zukimo_clock.h
+new file mode 100644
+index 000000000000..bf3363021d90
+--- /dev/null
++++ b/include/dt-bindings/clock/zukimo_clock.h
+@@ -0,0 +1,29 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++/* Copyright (c) 2024 Dream Chip Technologies */
++
++/* The following clock indices must start with 0 and must not have any gaps */
++#define ZUK_CLK_PLL_DDRA 0
++#define ZUK_CLK_PLL_DDRB 1
++#define ZUK_CLK_PLL_APU 2
++#define ZUK_CLK_PLL_NNA 3
++#define ZUK_CLK_PLL_R2000 4
++#define ZUK_CLK_PLL_DPI 5
++#define ZUK_CLK_PLL_ISP 6
++#define ZUK_CLK_ISP0 7
++#define ZUK_CLK_ISP1 8
++#define ZUK_CLK_ISP2 9
++#define ZUK_CLK_NOC_AXI 10
++#define ZUK_CLK_NOC_APB 11
++#define ZUK_CLK_NOC_DBG 12
++#define ZUK_CLK_TRACE 13
++#define ZUK_CLK_MVDU 14
++#define ZUK_CLK_R250 15
++#define ZUK_CLK_BAUD_UART0 16
++#define ZUK_CLK_BAUD_UART1 17
++#define ZUK_CLK_SCK_QSPI_SLOW 18
++#define ZUK_CLK_SCK_QSPI_FAST 19
++#define ZUK_CLK_GEM125 20
++#define ZUK_CLK_MIPI_RX_CFG 21
++#define ZUK_CLK_MIPI_TX_CFG 22
++/* must be last element: */
++#define ZUK_CRU_CLOCK_MAX 23
+-- 
+2.34.1
+

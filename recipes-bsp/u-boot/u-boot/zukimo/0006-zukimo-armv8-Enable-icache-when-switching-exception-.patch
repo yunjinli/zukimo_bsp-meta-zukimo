@@ -1,0 +1,35 @@
+From 26ba29fbcda421f6b355c5fe81b09533fdf9d16d Mon Sep 17 00:00:00 2001
+From: Stefan Stuerke <stefan.stuerke@dreamchip.de>
+Date: Thu, 25 May 2023 08:48:32 +0200
+Subject: [PATCH 06/12] zukimo: armv8 Enable icache when switching exception
+ levels.patch
+
+Upstream-Status: Pending
+
+---
+ arch/arm/cpu/armv8/exception_level.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/arch/arm/cpu/armv8/exception_level.c b/arch/arm/cpu/armv8/exception_level.c
+index b11936548f..a805b27747 100644
+--- a/arch/arm/cpu/armv8/exception_level.c
++++ b/arch/arm/cpu/armv8/exception_level.c
+@@ -27,6 +27,7 @@
+ static void entry_non_secure(struct jmp_buf_data *non_secure_jmp)
+ {
+ 	dcache_enable();
++	icache_enable();
+ 	debug("Reached non-secure mode\n");
+ 
+ 	/* Restore stack and registers saved in switch_to_non_secure_mode() */
+@@ -50,6 +51,7 @@ void switch_to_non_secure_mode(void)
+ 		if (setjmp(&non_secure_jmp))
+ 			return;
+ 		dcache_disable();	/* flush cache before switch to EL2 */
++		icache_disable();
+ 
+ 		/* Move into EL2 and keep running there */
+ 		armv8_switch_to_el2((uintptr_t)&non_secure_jmp, 0, 0, 0,
+-- 
+2.34.1
+

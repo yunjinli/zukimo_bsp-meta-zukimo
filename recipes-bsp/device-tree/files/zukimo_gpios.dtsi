@@ -1,0 +1,51 @@
+
+
+
+&{/} {
+
+	/**
+	 * With the reset controller a kernel driver as well as the userspace
+	 * can control the reset lines.
+	 *
+	 * example from userspace:
+	 * echo assert > /sys/bus/platform/devices/gpio-reset/reset-reset-noc-axi_clk-n/control
+	 * echo deassert > /sys/bus/platform/devices/gpio-reset/reset-reset-noc-axi_clk-n/control
+	 * 
+	 * The reset lines can be inspected by looking at:
+	 * cat /sys/kernel/debug/gpio
+	 */
+	gpio-reset {
+		compatible = "linux,gpio-reset";
+
+		isp0_reset:reset-isp0-n {
+			#reset-cells = <0>;
+			gpios = <&dct_gpio 94 1>;	// EMIO offset (78) gpio[16]
+			asserted-state = <0>;
+			duration-ms = <100>;
+		};
+		isp1_reset:reset-isp1-n {
+			#reset-cells = <0>;
+			gpios = <&dct_gpio 95 1>;	// EMIO offset (78) gpio[17]
+			asserted-state = <0>;
+			duration-ms = <100>;
+		};
+		isp2_reset:reset-isp2-n {
+			#reset-cells = <0>;
+			gpios = <&dct_gpio 96 1>;	// EMIO offset (78) gpio[18]
+			asserted-state = <0>;
+			duration-ms = <100>;
+		};
+		csi2_0_ctrl_reset:reset-mipi-rx-n {
+			#reset-cells = <0>;
+			gpios = <&dct_gpio 97 1>;	// EMIO offset (78) gpio[19]
+			asserted-state = <0>;
+			duration-ms = <100>;
+		};
+		noc_reset:reset-noc-axi_clk-n {
+			#reset-cells = <0>;
+			gpios = <&dct_gpio 98 1>;	// EMIO offset (78) gpio[20]
+			asserted-state = <0>;
+			duration-ms = <100>;
+		};
+	};
+};

@@ -1,0 +1,28 @@
+From d4c2b06c70147b96241b599ae0e501f76e6c3900 Mon Sep 17 00:00:00 2001
+From: Ralph Hempel <ralph.hempel@dreamchip.de>
+Date: Thu, 11 Jan 2024 12:54:33 +0100
+Subject: [PATCH 04/34] zukimo: add quad flash support
+
+Upstream-Status: Pending
+---
+ drivers/mtd/spi-nor/gigadevice.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/drivers/mtd/spi-nor/gigadevice.c b/drivers/mtd/spi-nor/gigadevice.c
+index d57ddaf1525b..f654b0161afd 100644
+--- a/drivers/mtd/spi-nor/gigadevice.c
++++ b/drivers/mtd/spi-nor/gigadevice.c
+@@ -38,6 +38,10 @@ static const struct flash_info gigadevice_nor_parts[] = {
+ 		FLAGS(SPI_NOR_HAS_LOCK | SPI_NOR_HAS_TB)
+ 		NO_SFDP_FLAGS(SECT_4K | SPI_NOR_DUAL_READ |
+ 			      SPI_NOR_QUAD_READ) },
++	{ "gd25ql16", INFO(0xc86015, 0, 64 * 1024,  32)
++		FLAGS(SPI_NOR_HAS_LOCK | SPI_NOR_HAS_TB)
++		NO_SFDP_FLAGS(SECT_4K | SPI_NOR_DUAL_READ |
++			      SPI_NOR_QUAD_READ) },
+ 	{ "gd25q32", INFO(0xc84016, 0, 64 * 1024,  64)
+ 		FLAGS(SPI_NOR_HAS_LOCK | SPI_NOR_HAS_TB)
+ 		NO_SFDP_FLAGS(SECT_4K | SPI_NOR_DUAL_READ |
+-- 
+2.34.1
+

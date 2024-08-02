@@ -1,0 +1,90 @@
+From 038d5c1c545cd955e48f78bd93607c7c3087f283 Mon Sep 17 00:00:00 2001
+From: Tomi Valkeinen <tomi.valkeinen@ideasonboard.com>
+Date: Mon, 31 Jul 2023 16:24:35 +0300
+Subject: [PATCH 14/34] media: i2c: ds90ub9x3: Fix sub-device matching
+
+Upstream-Status: Pending
+
+1029939b3782 ("media: v4l: async: Simplify async sub-device fwnode
+matching") recently changed how async sub-device matching works. This
+breaks the UB9x3 drivers, as they set the subdev.fwnode to an endpoint.
+Afaiu, the fix is simply to not set subdev.fwnode at all.
+
+Fixes: 1029939b3782 ("media: v4l: async: Simplify async sub-device fwnode matching")
+Signed-off-by: Tomi Valkeinen <tomi.valkeinen@ideasonboard.com>
+Cc: Sakari Ailus <sakari.ailus@linux.intel.com>
+---
+ drivers/media/i2c/ds90ub913.c | 14 +-------------
+ drivers/media/i2c/ds90ub953.c | 13 +------------
+ 2 files changed, 2 insertions(+), 25 deletions(-)
+
+diff --git a/drivers/media/i2c/ds90ub913.c b/drivers/media/i2c/ds90ub913.c
+index 203f7cceae23..1c2482886b3b 100644
+--- a/drivers/media/i2c/ds90ub913.c
++++ b/drivers/media/i2c/ds90ub913.c
+@@ -749,19 +749,9 @@ static int ub913_subdev_init(struct ub913_data *priv)
+ 	if (ret)
+ 		return dev_err_probe(dev, ret, "Failed to init pads\n");
+ 
+-	priv->sd.fwnode = fwnode_graph_get_endpoint_by_id(dev_fwnode(dev),
+-							  UB913_PAD_SOURCE, 0,
+-							  0);
+-
+-	if (!priv->sd.fwnode) {
+-		ret = -ENODEV;
+-		dev_err_probe(dev, ret, "Missing TX endpoint\n");
+-		goto err_entity_cleanup;
+-	}
+-
+ 	ret = v4l2_subdev_init_finalize(&priv->sd);
+ 	if (ret)
+-		goto err_fwnode_put;
++		goto err_entity_cleanup;
+ 
+ 	ret = ub913_v4l2_notifier_register(priv);
+ 	if (ret) {
+@@ -782,8 +772,6 @@ static int ub913_subdev_init(struct ub913_data *priv)
+ 	ub913_v4l2_nf_unregister(priv);
+ err_subdev_cleanup:
+ 	v4l2_subdev_cleanup(&priv->sd);
+-err_fwnode_put:
+-	fwnode_handle_put(priv->sd.fwnode);
+ err_entity_cleanup:
+ 	media_entity_cleanup(&priv->sd.entity);
+ 
+diff --git a/drivers/media/i2c/ds90ub953.c b/drivers/media/i2c/ds90ub953.c
+index 2b6fff26d85f..8d7c621370cf 100644
+--- a/drivers/media/i2c/ds90ub953.c
++++ b/drivers/media/i2c/ds90ub953.c
+@@ -1226,18 +1226,9 @@ static int ub953_subdev_init(struct ub953_data *priv)
+ 	if (ret)
+ 		return dev_err_probe(dev, ret, "Failed to init pads\n");
+ 
+-	priv->sd.fwnode = fwnode_graph_get_endpoint_by_id(dev_fwnode(dev),
+-							  UB953_PAD_SOURCE, 0,
+-							  0);
+-	if (!priv->sd.fwnode) {
+-		ret = -ENODEV;
+-		dev_err_probe(dev, ret, "Missing TX endpoint\n");
+-		goto err_entity_cleanup;
+-	}
+-
+ 	ret = v4l2_subdev_init_finalize(&priv->sd);
+ 	if (ret)
+-		goto err_fwnode_put;
++		goto err_entity_cleanup;
+ 
+ 	ret = ub953_v4l2_notifier_register(priv);
+ 	if (ret) {
+@@ -1258,8 +1249,6 @@ static int ub953_subdev_init(struct ub953_data *priv)
+ 	ub953_v4l2_notifier_unregister(priv);
+ err_free_state:
+ 	v4l2_subdev_cleanup(&priv->sd);
+-err_fwnode_put:
+-	fwnode_handle_put(priv->sd.fwnode);
+ err_entity_cleanup:
+ 	media_entity_cleanup(&priv->sd.entity);
+ 
+-- 
+2.34.1
+

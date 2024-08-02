@@ -1,0 +1,39 @@
+#!/bin/sh
+
+bootfs_enabled() {
+	return 0
+}
+
+bootfs_run() {
+	filesystems="vfat"
+
+	for fs in $filesystems; do
+		eval "fs_options=\$bootparam_${fs}"
+		if [ -n "$fs_options" ]; then
+			dev=`expr "$fs_options" : '\([^:]*\).*'`
+			path=`expr "$fs_options" : '[^:]*:\([^:]*\).*'`
+			debug "Mounting $dev as $fs on $path as $fs..."
+			mkdir -p $path
+			C=0
+			delay=${bootparam_rootdelay:-1}
+			timeout=${bootparam_roottimeout:-5}
+			while ! mountpoint -q $path; do
+				if [ $(( $C * $delay )) -gt $timeout ]; then
+					debug "can't mount $path"
+					return
+				fi
+
+				debug "mount -t $fs $dev $path"
+				mount -t $fs $dev $path
+				if mountpoint -q $path; then
+					break
+				fi
+
+				debug "Sleeping for $delay second(s) to wait root to settle..."
+				sleep $delay
+				C=$(( $C + 1 ))
+			done
+
+		fi
+	done
+}

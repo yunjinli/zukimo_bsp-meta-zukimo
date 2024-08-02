@@ -1,0 +1,73 @@
+From 89f28712187d0be55d6721626139266e0c066f62 Mon Sep 17 00:00:00 2001
+From: Jan Meyer-Siemon <Jan.Meyer-Siemon@dreamchip.de>
+Date: Mon, 3 Jun 2024 13:21:45 +0200
+Subject: [PATCH 33/34] Fix ds90ub960 tpg
+
+Upstream-Status: Pending
+---
+ drivers/media/i2c/ds90ub960.c | 26 +++++++++++++-------------
+ 1 file changed, 13 insertions(+), 13 deletions(-)
+
+diff --git a/drivers/media/i2c/ds90ub960.c b/drivers/media/i2c/ds90ub960.c
+index 39cf06114826..963268d2fc29 100644
+--- a/drivers/media/i2c/ds90ub960.c
++++ b/drivers/media/i2c/ds90ub960.c
+@@ -3233,13 +3233,13 @@ static void ub960_enable_tpg(struct ub960_data *priv, int tpg_num)
+ 	 * one will use the TPG, other streams will be halted.
+ 	 */
+ 
+-	struct v4l2_mbus_framefmt *fmt;
++	//struct v4l2_mbus_framefmt *fmt;
+ 	u8 vbp, vfp;
+ 	u16 blank_lines;
+ 	u16 width;
+ 	u16 height;
+ 
+-	u16 bytespp = 2; /* For MEDIA_BUS_FMT_UYVY8_1X16 */
++	u16 bitspp = 12;
+ 	u8 cbars_idx = tpg_num - TEST_PATTERN_V_COLOR_BARS_1;
+ 	u8 num_cbars = 1 << cbars_idx;
+ 
+@@ -3257,16 +3257,16 @@ static void ub960_enable_tpg(struct ub960_data *priv, int tpg_num)
+ 	vfp = 10;
+ 	blank_lines = vbp + vfp + 2; /* total blanking lines */
+ 
+-	fmt = v4l2_subdev_state_get_stream_format(state, 4, 0);
+-	if (!fmt) {
+-		dev_err(&priv->client->dev, "failed to enable TPG\n");
+-		return;
+-	}
++	//fmt = v4l2_subdev_state_get_stream_format(state, 4, 0);
++	//if (!fmt) {
++	//	dev_err(&priv->client->dev, "failed to enable TPG\n");
++	//	return;
++	//}
+ 
+-	width = fmt->width;
+-	height = fmt->height;
++	width = 1936;//fmt->width;
++	height = 1100;//fmt->height;
+ 
+-	line_size = width * bytespp;
++	line_size = (width * bitspp) / 8;
+ 	bar_size = line_size / num_cbars;
+ 	act_lpf = height;
+ 	tot_lpf = act_lpf + blank_lines;
+@@ -3279,11 +3279,11 @@ static void ub960_enable_tpg(struct ub960_data *priv, int tpg_num)
+ 	ub960_write_ind(priv, UB960_IND_TARGET_PAT_GEN, UB960_IR_PGEN_CTL,
+ 			UB960_IR_PGEN_CTL_PGEN_ENABLE);
+ 
+-	/* YUV422 8bit: 2 bytes/block, CSI-2 data type 0x1e */
++	// 3 bytes -> 2 pixels have the same value
+ 	ub960_write_ind(priv, UB960_IND_TARGET_PAT_GEN, UB960_IR_PGEN_CFG,
+-			cbars_idx << 4 | 0x2);
++			cbars_idx << 4 | 0x3);
+ 	ub960_write_ind(priv, UB960_IND_TARGET_PAT_GEN, UB960_IR_PGEN_CSI_DI,
+-			0x1e);
++			0x2c);
+ 
+ 	ub960_write_ind16(priv, UB960_IND_TARGET_PAT_GEN,
+ 			  UB960_IR_PGEN_LINE_SIZE1, line_size);
+-- 
+2.34.1
+

@@ -1,0 +1,28 @@
+From 79d12fce126c6ac828ed023e2f2dad158baf8f5b Mon Sep 17 00:00:00 2001
+From: Ralph Hempel <ralph.hempel@dreamchip.de>
+Date: Tue, 21 Nov 2023 08:06:20 +0100
+Subject: [PATCH 07/12] zukimo: fix board_f
+
+Upstream-Status: Pending
+
+---
+ common/board_f.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/common/board_f.c b/common/board_f.c
+index 9e2dc1ec3d..f26eed21ac 100644
+--- a/common/board_f.c
++++ b/common/board_f.c
+@@ -374,6 +374,9 @@ static int setup_dest_addr(void)
+ #endif
+ #ifdef CFG_SYS_SDRAM_BASE
+ 	gd->ram_base = CFG_SYS_SDRAM_BASE;
++#endif
++#ifdef CFG_SYS_SRAM_BASE
++	gd->ram_base = CFG_SYS_SRAM_BASE;
+ #endif
+ 	gd->ram_top = gd->ram_base + get_effective_memsize();
+ 	gd->ram_top = board_get_usable_ram_top(gd->mon_len);
+-- 
+2.34.1
+

@@ -1,0 +1,81 @@
+// SPDX-License-Identifier: GPL-2.0
+
+#include <dt-bindings/gpio/gpio.h>
+
+&ds90ub954_3_ports {
+	#address-cells = <1>;
+	#size-cells = <0>;
+
+	/* FPDLink RX 1 */
+	port@0 {
+		reg = <0>;
+
+		ub954_fpd3_3_in: endpoint {
+			remote-endpoint = <&ub953_6_out>;
+		};
+	};
+};
+
+&ds90ub954_3_links {
+	#address-cells = <1>;
+	#size-cells = <0>;
+
+	link@0 {
+		reg = <0>;
+		i2c-alias = <0x1E>;
+		ti,rx-mode = <3>;
+
+		serializer6: serializer {
+			compatible = "ti,ds90ub953-q1";
+			gpio-controller;
+			#gpio-cells = <2>;
+
+			#clock-cells = <0>;
+
+			ports {
+				#address-cells = <1>;
+				#size-cells = <0>;
+
+				port@0 {
+					reg = <0>;
+					ub953_6_in: endpoint {
+						clock-lanes = <0>;
+						data-lanes = <1 2 3 4>;
+						remote-endpoint = <&sensor_6_out>;
+					};
+				};
+
+				port@1 {
+					reg = <1>;
+
+					ub953_6_out: endpoint {
+						remote-endpoint = <&ub954_fpd3_3_in>;
+					};
+				};
+			};
+
+			i2c {
+				#address-cells = <1>;
+				#size-cells = <0>;
+
+				sensor@21 {
+					compatible = "sony,imx390";
+					reg = <0x21>;
+
+					clocks = <&serializer6>;
+					clock-names = "inck";
+					assigned-clocks = <&serializer6>;
+					assigned-clock-rates = <27000000>;
+
+					xclr-gpios = <&serializer6 2 GPIO_ACTIVE_LOW>;
+
+					port {
+						sensor_6_out: endpoint {
+							remote-endpoint = <&ub953_6_in>;
+						};
+					};
+				};
+			};
+		};
+	};
+};

@@ -1,0 +1,147 @@
+From 6aa1a802f8e636ac7da96921477006a67508465b Mon Sep 17 00:00:00 2001
+From: Ralph Hempel <ralph.hempel@dreamchip.de>
+Date: Fri, 26 Jan 2024 09:57:12 +0100
+Subject: [PATCH 09/12] zukimo: add gem support
+
+Upstream-Status: Pending
+---
+ drivers/net/macb.c     | 58 +++++++++++++++++++++++++++---------------
+ drivers/net/zynq_gem.c |  8 +++---
+ 2 files changed, 41 insertions(+), 25 deletions(-)
+
+diff --git a/drivers/net/macb.c b/drivers/net/macb.c
+index bfc48dac07..12cc6fceb1 100644
+--- a/drivers/net/macb.c
++++ b/drivers/net/macb.c
+@@ -7,6 +7,7 @@
+ #include <cpu_func.h>
+ #include <dm.h>
+ #include <log.h>
++#include <reset.h>
+ #include <asm/global_data.h>
+ #include <linux/delay.h>
+ 
+@@ -39,7 +40,7 @@
+ #include <linux/mii.h>
+ #include <asm/io.h>
+ #include <linux/dma-mapping.h>
+-#include <asm/arch/clk.h>
++// #include <asm/arch/clk.h>
+ #include <linux/errno.h>
+ 
+ #include "macb.h"
+@@ -904,26 +905,28 @@ static int _macb_init(struct udevice *dev, const char *name)
+ 		/* Check the multi queue and initialize the queue for tx */
+ 		gmac_init_multi_queues(macb);
+ 
+-		/*
+-		 * When the GMAC IP with GE feature, this bit is used to
+-		 * select interface between RGMII and GMII.
+-		 * When the GMAC IP without GE feature, this bit is used
+-		 * to select interface between RMII and MII.
+-		 */
+-		if (macb->phy_interface == PHY_INTERFACE_MODE_RGMII ||
+-		    macb->phy_interface == PHY_INTERFACE_MODE_RGMII_ID ||
+-		    macb->phy_interface == PHY_INTERFACE_MODE_RGMII_RXID ||
+-		    macb->phy_interface == PHY_INTERFACE_MODE_RGMII_TXID)
+-			val = macb->config->usrio->rgmii;
+-		else if (macb->phy_interface == PHY_INTERFACE_MODE_RMII)
+-			val = macb->config->usrio->rmii;
+-		else if (macb->phy_interface == PHY_INTERFACE_MODE_MII)
+-			val = macb->config->usrio->mii;
+-
+-		if (macb->config->caps & MACB_CAPS_USRIO_HAS_CLKEN)
+-			val |= macb->config->usrio->clken;
+-
+-		gem_writel(macb, USRIO, val);
++		if (macb->config->usrio) {
++			/*
++			* When the GMAC IP with GE feature, this bit is used to
++			* select interface between RGMII and GMII.
++			* When the GMAC IP without GE feature, this bit is used
++			* to select interface between RMII and MII.
++			*/
++			if (macb->phy_interface == PHY_INTERFACE_MODE_RGMII ||
++				macb->phy_interface == PHY_INTERFACE_MODE_RGMII_ID ||
++				macb->phy_interface == PHY_INTERFACE_MODE_RGMII_RXID ||
++				macb->phy_interface == PHY_INTERFACE_MODE_RGMII_TXID)
++				val = macb->config->usrio->rgmii;
++			else if (macb->phy_interface == PHY_INTERFACE_MODE_RMII)
++				val = macb->config->usrio->rmii;
++			else if (macb->phy_interface == PHY_INTERFACE_MODE_MII)
++				val = macb->config->usrio->mii;
++
++			if (macb->config->caps & MACB_CAPS_USRIO_HAS_CLKEN)
++				val |= macb->config->usrio->clken;
++
++			gem_writel(macb, USRIO, val);
++		}
+ 
+ 		if (macb->phy_interface == PHY_INTERFACE_MODE_SGMII) {
+ 			unsigned int ncfgr = macb_readl(macb, NCFGR);
+@@ -1154,6 +1157,7 @@ static int macb_enable_clk(struct udevice *dev)
+ {
+ 	struct macb_device *macb = dev_get_priv(dev);
+ 	struct clk clk;
++	struct reset_ctl reset;
+ 	ulong clk_rate;
+ 	int ret;
+ 
+@@ -1176,6 +1180,12 @@ static int macb_enable_clk(struct udevice *dev)
+ 
+ 	macb->pclk_rate = clk_rate;
+ 
++	if (reset_get_by_index(dev, 0, &reset) == 0) {
++		reset_assert(&reset);
++		reset_deassert(&reset);
++		reset_free(&reset);
++	}
++
+ 	return 0;
+ }
+ #endif
+@@ -1319,8 +1329,14 @@ static const struct macb_config sama7g5_emac_config = {
+ 	.usrio = &sama7g5_usrio,
+ };
+ 
++static const struct macb_config zukimo_config = {
++	.dma_burst_length = 16,
++	.hw_dma_cap = HW_DMA_CAP_64B,
++};
++
+ static const struct udevice_id macb_eth_ids[] = {
+ 	{ .compatible = "cdns,macb" },
++	{ .compatible = "cdns,zukimo-macb", .data = (ulong)&zukimo_config },
+ 	{ .compatible = "cdns,at91sam9260-macb" },
+ 	{ .compatible = "cdns,sam9x60-macb" },
+ 	{ .compatible = "cdns,sama7g5-gem",
+diff --git a/drivers/net/zynq_gem.c b/drivers/net/zynq_gem.c
+index cc49788012..95469cdbf0 100644
+--- a/drivers/net/zynq_gem.c
++++ b/drivers/net/zynq_gem.c
+@@ -27,8 +27,8 @@
+ #include <wait_bit.h>
+ #include <watchdog.h>
+ #include <asm/system.h>
+-#include <asm/arch/hardware.h>
+-#include <asm/arch/sys_proto.h>
++// #include <asm/arch/hardware.h>
++// #include <asm/arch/sys_proto.h>
+ #include <dm/device_compat.h>
+ #include <linux/bitops.h>
+ #include <linux/err.h>
+@@ -445,9 +445,9 @@ static int zynq_gem_init(struct udevice *dev)
+ #endif
+ 		dummy_rx_bd->status = 0;
+ 
+-		writel((ulong)dummy_tx_bd, &regs->transmit_q1_ptr);
+-		writel((ulong)dummy_rx_bd, &regs->receive_q1_ptr);
+ 
++//		writel((ulong)dummy_tx_bd, &regs->transmit_q1_ptr);
++//		writel((ulong)dummy_rx_bd, &regs->receive_q1_ptr);
+ 		priv->init++;
+ 	}
+ 
+-- 
+2.34.1
+

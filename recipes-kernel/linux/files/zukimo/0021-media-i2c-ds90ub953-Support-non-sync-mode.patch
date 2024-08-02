@@ -1,0 +1,92 @@
+From 5456db7276b854f5df70d2ad1310a1d0b4dd22f7 Mon Sep 17 00:00:00 2001
+From: Tomi Valkeinen <tomi.valkeinen@ideasonboard.com>
+Date: Mon, 31 Jul 2023 16:24:42 +0300
+Subject: [PATCH 21/34] media: i2c: ds90ub953: Support non-sync mode
+
+Upstream-Status: Pending
+
+Add support for FPD-Link non-sync mode with external clock. The only
+thing that needs to be added is the calculation for the clkout.
+
+Signed-off-by: Tomi Valkeinen <tomi.valkeinen@ideasonboard.com>
+Reviewed-by: Laurent Pinchart <laurent.pinchart@ideasonboard.com>
+Reviewed-by: Andy Shevchenko <andriy.shevchenko@linux.intel.com>
+---
+ drivers/media/i2c/ds90ub953.c | 36 +++++++++++++++++++++++++++--------
+ 1 file changed, 28 insertions(+), 8 deletions(-)
+
+diff --git a/drivers/media/i2c/ds90ub953.c b/drivers/media/i2c/ds90ub953.c
+index dc5904e02059..942fbcee2fad 100644
+--- a/drivers/media/i2c/ds90ub953.c
++++ b/drivers/media/i2c/ds90ub953.c
+@@ -145,6 +145,7 @@ struct ub953_data {
+ 
+ 	struct i2c_client	*client;
+ 	struct regmap		*regmap;
++	struct clk		*clkin;
+ 
+ 	u32			num_data_lanes;
+ 	bool			non_continous_clk;
+@@ -844,15 +845,21 @@ static int ub953_i2c_master_init(struct ub953_data *priv)
+ 
+ static u64 ub953_get_fc_rate(struct ub953_data *priv)
+ {
+-	if (priv->mode != UB953_MODE_SYNC) {
++	switch (priv->mode) {
++	case UB953_MODE_SYNC:
++		if (priv->hw_data->is_ub971)
++			return priv->plat_data->bc_rate * 160ull;
++		else
++			return priv->plat_data->bc_rate / 2 * 160ull;
++
++	case UB953_MODE_NONSYNC_EXT:
++		/* CLKIN_DIV = 1 always */
++		return clk_get_rate(priv->clkin) * 80ull;
++
++	default:
+ 		/* Not supported */
+ 		return 0;
+ 	}
+-
+-	if (priv->hw_data->is_ub971)
+-		return priv->plat_data->bc_rate * 160ull;
+-	else
+-		return priv->plat_data->bc_rate / 2 * 160ull;
+ }
+ 
+ static unsigned long ub953_calc_clkout_ub953(struct ub953_data *priv,
+@@ -1200,9 +1207,15 @@ static int ub953_hw_init(struct ub953_data *priv)
+ 	dev_dbg(dev, "mode from %s: %#x\n", mode_override ? "reg" : "strap",
+ 		priv->mode);
+ 
+-	if (priv->mode != UB953_MODE_SYNC)
++	if (priv->mode != UB953_MODE_SYNC &&
++	    priv->mode != UB953_MODE_NONSYNC_EXT)
+ 		return dev_err_probe(dev, -ENODEV,
+-				     "Only synchronous mode supported\n");
++				     "Unsupported mode selected: %u\n",
++				     priv->mode);
++
++	if (priv->mode == UB953_MODE_NONSYNC_EXT && !priv->clkin)
++		return dev_err_probe(dev, -EINVAL,
++				     "clkin required for non-sync ext mode\n");
+ 
+ 	ret = ub953_read(priv, UB953_REG_REV_MASK_ID, &v);
+ 	if (ret)
+@@ -1319,6 +1332,13 @@ static int ub953_probe(struct i2c_client *client)
+ 		goto err_mutex_destroy;
+ 	}
+ 
++	priv->clkin = devm_clk_get_optional(dev, "clkin");
++	if (IS_ERR(priv->clkin)) {
++		ret = PTR_ERR(priv->clkin);
++		dev_err_probe(dev, ret, "failed to parse 'clkin'\n");
++		goto err_mutex_destroy;
++	}
++
+ 	ret = ub953_parse_dt(priv);
+ 	if (ret)
+ 		goto err_mutex_destroy;
+-- 
+2.34.1
+

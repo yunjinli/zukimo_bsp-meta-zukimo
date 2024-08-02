@@ -1,0 +1,25 @@
+include features/input/input.scc
+include cfg/timer/no_hz.scc
+
+include features/net/net.scc
+#include cfg/virtio.scc
+
+kconf hardware zukimo/zukimo-board.cfg
+kconf hardware zukimo/zukimo-camera.cfg
+kconf hardware zukimo/zukimo-cfi.cfg
+kconf hardware zukimo/zukimo-debug.cfg
+kconf hardware zukimo/zukimo-fs.cfg
+kconf hardware zukimo/zukimo-gpio.cfg
+kconf hardware zukimo/zukimo-i2c.cfg
+kconf hardware zukimo/zukimo-media.cfg
+kconf hardware zukimo/zukimo-net.cfg
+kconf hardware zukimo/zukimo-pcie.cfg
+kconf hardware zukimo/zukimo-sdhc.cfg
+kconf hardware zukimo/zukimo-serial.cfg
+
+kconf hardware zukimo/zukimo-cpufreq.cfg
+kconf hardware zukimo/zukimo-reset.cfg
+#kconf hardware zukimo/zukimo-rtc.cfg
+#kconf hardware zukimo/zukimo-drm.cfg
+#kconf hardware zukimo/zukimo-timer.cfg
+#kconf hardware zukimo/zukimo-watchdog.cfg

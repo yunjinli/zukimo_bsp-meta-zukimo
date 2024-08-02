@@ -1,0 +1,381 @@
+// SPDX-License-Identifier: GPL-2.0
+/*
+ * MAIN1: 0x2608_0000
+ * PRE1:  0x2640_2000
+ * PRE2:  0x2640_3000
+ *
+ * The full address map:
+ *
+ * +--------+-----------------------------------+--------------+-----------------+
+ * | Module | Sub-Module                        |  BaseAddress | Size (in Bytes) |
+ * +--------+-----------------------------------+--------------+-----------------|
+ * | PRE2   | DMA Write                         |  0x2640_2000 | 68              |
+ * |        +-----------------------------------+--------------+-----------------+
+ * |        | Sysreg       Module ID            |  0x2640_2200 | 4               |
+ * |        |              IRC5                 |  0x2640_2220 | 20              |
+ * |        |              MIPI Sync            |  0x2640_2240 | 36              |
+ * +--------+-----------------------------------+--------------+-----------------+
+ * | PRE3   | DMA Write                         |  0x2640_3000 | 68              |
+ * |        +-----------------------------------+--------------+-----------------+
+ * |        | Sysreg       Module ID            |  0x2640_3200 | 4               |
+ * |        |              IRC5                 |  0x2640_3220 | 20              |
+ * |        |              MIPI Sync            |  0x2640_3240 | 36              |
+ * +--------+-----------------------------------+--------------+-----------------+
+ * | MAIN1  | RPP HDR                           |  0x2608_0000 | 65536           |
+ * +--------+-----------------------------------+--------------+-----------------+
+ * |        | DMA Read                          |  0x260C_0000 | 56              |
+ * +--------+-----------------------------------+--------------+-----------------+
+ * |        | DMA Write 0 (Human Vision Data)   |  0x260C_1000 | 68              |
+ * +--------+-----------------------------------+--------------+-----------------+
+ * |        | DMA Write 1 (Machine Vision Data) |  0x260C_1200 | 68              |
+ * +--------+-----------------------------------+--------------+-----------------+
+ * |        | DMA Write 2 (Defect Pixel Data)   |  0x260C_1400 | 68              |
+ * +--------+-----------------------------------+--------------+-----------------+
+ * |        | DMA Write 3 (Histogram Data)      |  0x260C_1600 | 68              |
+ * +--------+-----------------------------------+--------------+-----------------+
+ * |        | Sysreg      Module ID             |  0x260C_2000 | 4               |
+ * |        |             IRC5                  |  0x260C_2020 | 20              |
+ * |        |             ISP Sync              |  0x260C_2040 | 8               |
+ * |        |             Config                |  0x260C_2060 | 40              |
+ * +--------+-----------------------------------+--------------+-----------------+
+ */
+
+&{/} {
+	#address-cells = <2>;
+	#size-cells = <2>;
+
+	// ISP PRE 2
+	isp1_pre2_irc5: isp_pre_irc5@26402220 {
+		compatible = "dct,irc5";
+		interrupt-controller;
+		#interrupt-cells = <1>;
+		reg = <0x0 0x26402220 0x0 20>;
+
+		clocks = <&isp2_clk>;
+		clock-names = "irc5_clk";
+
+		interrupt-parent = <&gic>;
+		interrupts = <GIC_SPI 155 IRQ_TYPE_LEVEL_HIGH>;
+
+		dct,num-irq-lines = <4>;
+		//status = "disabled";
+	};
+
+	isp_interconnect2: isp_interconnect2 {
+		direct-source = <&isp1_pre2>;
+		direct-dest = <&isp1_main>;
+	};
+
+	isp1_pre2_dma: isp_pre_dma@26402000 {
+		compatible = "dct,isp-dma";
+		#dma-cells = <1>;
+		ranges = <>;	// Use 1:1 address translation for child nodes
+
+		clocks = <&isp2_clk>;
+		clock-names = "isp_dma_clk";
+
+		interrupt-parent = <&isp1_pre2_irc5>;
+
+		memory-region = <&isp_cma>;
+		//status = "disabled";
+
+		write-channel@26402000 {
+			compatible = "dct,isp-dma-wr-channel";
+			reg = <0x0 0x26402000 0x0 68>;
+
+			interrupts = <0>, <1>;
+			interrupt-names = "transfer-done", "config-done";
+
+			video-dev-nr = <12>;
+
+			interconnect = <&isp_interconnect2>;
+		};
+	};
+
+	isp1_pre2: isp_pre@26402200 {
+		compatible = "dct,dct-isp-pre";
+		reg = <0x0 0x26402200 0x0 0xFF>; // sysreg
+
+		clocks = <&isp2_clk>;
+		clock-names = "isp_pre_clk";
+
+		csi2 = <&csi2_2>;
+		dmas = <&isp1_pre2_dma 0>;
+		dma-names = "write";
+
+		direct-mode-addr =
+							<0x00000000>,
+							<0x00000100>,
+							<0x00000200>,
+							<0x00000300>;
+
+		interrupts-extended =
+			<&gic GIC_SPI 168 IRQ_TYPE_LEVEL_HIGH>,	// idi2qpix IRQ
+			<&isp1_pre2_irc5 2>;	// fifo overflow IRQ, via IRC5
+
+		interrupt-names =
+			"mipi-rx-idi2qpix",
+			"fifo-overflow";
+
+		//status = "disabled";
+
+		#address-cells = <1>;
+		#size-cells = <0>;
+		ports {
+			port@0 {
+				// Sink port
+				reg = <0>;
+				isp1_pre2_csi2_in: endpoint {
+					remote-endpoint = <&ds90ub954_2_csi_out>;
+					data-lanes = <1 2 3 4>;
+				};
+			};
+
+			port@1 {
+				// Sink port
+				reg = <1>;
+				isp1_pre2_in: endpoint {
+					remote-endpoint = <&csi2_2_out>;
+					data-lanes = <1 2 3 4>;
+				};
+			};
+
+			port@2 {
+				// Source port
+				reg = <2>;
+				isp1_pre2_out: endpoint {
+                    remote-endpoint = <&isp1_pre2_dma>;
+				};
+			};
+		};
+	};
+
+	// ISP PRE 3
+	isp1_pre3_irc5: isp_pre_irc5@26403220 {
+		compatible = "dct,irc5";
+		interrupt-controller;
+		#interrupt-cells = <1>;
+		reg = <0x0 0x26403220 0x0 20>;
+
+		clocks = <&isp2_clk>;
+		clock-names = "irc5_clk";
+
+		interrupt-parent = <&gic>;
+		interrupts = <GIC_SPI 156 IRQ_TYPE_LEVEL_HIGH>;
+
+		dct,num-irq-lines = <4>;
+		//status = "disabled";
+	};
+
+	isp_interconnect3: isp_interconnect3 {
+		direct-source = <&isp1_pre3>;
+		direct-dest = <&isp1_main>;
+	};
+
+	isp1_pre3_dma: isp_pre_dma@26403000 {
+		compatible = "dct,isp-dma";
+		#dma-cells = <1>;
+		ranges = <>;	// Use 1:1 address translation for child nodes
+
+		clocks = <&isp2_clk>;
+		clock-names = "isp_dma_clk";
+
+		interrupt-parent = <&isp1_pre3_irc5>;
+
+		memory-region = <&isp_cma>;
+
+		//status = "disabled";
+
+		write-channel@26403000 {
+			compatible = "dct,isp-dma-wr-channel";
+			reg = <0x0 0x26403000 0x0 68>;
+
+			interrupts = <0>, <1>;
+			interrupt-names = "transfer-done", "config-done";
+
+			video-dev-nr = <13>;
+		};
+	};
+
+	isp1_pre3: isp_pre@26403200 {
+		compatible = "dct,dct-isp-pre";
+		reg = <0x0 0x26403200 0x0 0xFF>; // sysreg
+
+		clocks = <&isp2_clk>;
+		clock-names = "isp_pre_clk";
+
+		csi2 = <&csi2_3>;
+		dmas = <&isp1_pre3_dma 0>;
+		dma-names = "write";
+
+		direct-mode-addr =
+					<0x00000000>,
+					<0x00000100>,
+					<0x00000200>,
+					<0x00000300>;
+
+		interrupts-extended =
+			<&gic GIC_SPI 170 IRQ_TYPE_LEVEL_HIGH>,	// idi2qpix IRQ
+			<&isp1_pre3_irc5 2>;	// fifo overflow IRQ, via IRC5
+
+		interrupt-names =
+			"mipi-rx-idi2qpix",
+			"fifo-overflow";
+
+		//status = "disabled";
+
+		#address-cells = <1>;
+		#size-cells = <0>;
+		ports {
+			port@0 {
+				// Sink port
+				reg = <0>;
+				isp1_pre3_csi2_in: endpoint {
+					remote-endpoint = <&ds90ub954_3_csi_out>;
+					data-lanes = <1 2 3 4>;
+				};
+			};
+
+			port@1 {
+				// Sink port
+				reg = <1>;
+				isp1_pre3_in: endpoint {
+					remote-endpoint = <&csi2_3_out>;
+					data-lanes = <1 2 3 4>;
+				};
+			};
+
+			port@2 {
+				// Source port
+				reg = <2>;
+				isp1_pre3_out: endpoint {
+                    remote-endpoint = <&isp1_pre3_dma>;
+				};
+			};
+		};
+	};
+
+	// ISP MAIN 1
+	isp1_main_irc5: isp_main_irc5@260C2020 {
+		compatible = "dct,irc5";
+		interrupt-controller;
+		#interrupt-cells = <1>;
+		reg = <0x0 0x260C2020 0x0 20>;
+
+		clocks = <&isp1_clk>;
+		clock-names = "irc5_clk";
+
+		interrupt-parent = <&gic>;
+		interrupts = <GIC_SPI 160 IRQ_TYPE_LEVEL_HIGH>;
+
+		dct,num-irq-lines = <12>;
+		//status = "disabled";
+	};
+
+	isp1_main_dma: isp_main_dma@260C0000 {
+		compatible = "dct,isp-dma";
+		#dma-cells = <1>;
+		ranges = <>;	// Use 1:1 address translation for child nodes
+
+		clocks = <&isp1_clk>;
+		clock-names = "isp_dma_clk";
+
+		interrupt-parent = <&isp1_main_irc5>;
+
+		memory-region = <&isp_cma>;
+		//status = "disabled";
+
+		read-channel@260C0000 {
+			compatible = "dct,isp-dma-rd-channel";
+			reg = <0x0 0x260C0000 0x0 56>;
+
+			interrupts = <1>, <2>;
+			interrupt-names = "transfer-done", "config-done";
+
+			video-dev-nr = <25>;
+
+			interconnect = <&isp_interconnect2>;
+			// use this instead to connect pre3 with main0
+			//interconnect = <&isp_interconnect3>;
+		};
+		hv-write-channel@260C1000 {
+			compatible = "dct,isp-dma-wr-channel";
+			reg = <0x0 0x260C1000 0x0 68>;
+
+			interrupts = <3>, <4>;
+			interrupt-names = "transfer-done", "config-done";
+
+			video-dev-nr = <26>;
+		};
+		mv-write-channel@260C1200 {
+			compatible = "dct,isp-dma-wr-channel";
+			reg = <0x0 0x260C1200 0x0 68>;
+
+			interrupts = <5>, <6>;
+			interrupt-names = "transfer-done", "config-done";
+
+			video-dev-nr = <27>;
+		};
+		dpc-write-channel@260C1400 {
+			compatible = "dct,isp-dma-wr-channel";
+			reg = <0x0 0x260C1400 0x0 68>;
+
+			interrupts = <7>, <8>;
+			interrupt-names = "transfer-done", "config-done";
+
+			video-dev-nr = <28>;
+			metadata;
+		};
+		hist-write-channel@260C1600 {
+			compatible = "dct,isp-dma-wr-channel";
+			reg = <0x0 0x260C1600 0x0 68>;
+
+			interrupts = <9>, <10>;
+			interrupt-names = "transfer-done", "config-done";
+
+			video-dev-nr = <29>;
+			metadata;
+		};
+	};
+
+	isp1_main: isp_main@26080000 {
+		compatible = "dct,dct-isp-main";
+		reg = <0x0 0x26080000 0x0 65536>,	// RPP HDR
+			  <0x0 0x260C2000 0x0 136>;		// Sysreg - ISP_MAIN
+
+		clocks = <&isp1_clk>;
+		clock-names = "isp_main_clk";
+
+		dmas =
+			<&isp1_main_dma 0>,
+			<&isp1_main_dma 1>,
+			<&isp1_main_dma 2>,
+			<&isp1_main_dma 3>,
+			<&isp1_main_dma 4>;
+
+		dma-names =
+			"read",
+			"write-hv",
+			"write-mv",
+			"write-dpc",
+			"write-hist";
+
+		direct-mode-addr =
+						<0x14001000>,
+						<0x14001100>,
+						<0x14001200>,
+						<0x14001300>;
+
+		interrupts-extended =
+			<&gic GIC_SPI 158 IRQ_TYPE_EDGE_RISING>,		// MAIN0, RPR HDR Error IRQ, not sure if falling edge is correct, but it is low active
+			<&isp1_main_irc5 0>,	// MAIN0, RPP HDR Functional IRQ, via IRC5
+			<&isp1_main_irc5 11>;	// MAIN0, ISP Sync TPG IRQ, via IRC5
+
+		interrupt-names =
+			"rpp_hdr_err_n",
+			"rpp_hdr_fun",
+			"isp_sync_tpg";
+
+		//status = "disabled";
+	};
+};

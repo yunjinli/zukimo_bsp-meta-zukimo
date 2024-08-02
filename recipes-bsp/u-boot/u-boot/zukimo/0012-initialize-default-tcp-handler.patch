@@ -1,0 +1,37 @@
+From 430c59442f4c4eb19571acb7bbb3db7112558408 Mon Sep 17 00:00:00 2001
+From: Stefan Stuerke <stefan.stuerke@dreamchip.de>
+Date: Thu, 25 Apr 2024 09:37:52 +0200
+Subject: [PATCH 12/12] initialize default tcp handler
+
+Upstream-Status: Pending
+---
+ net/tcp.c | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/net/tcp.c b/net/tcp.c
+index 8d338c72e8..daa30b11f7 100644
+--- a/net/tcp.c
++++ b/net/tcp.c
+@@ -68,9 +68,6 @@ static unsigned int prev_len;
+ /* TCP connection state */
+ static enum tcp_state current_tcp_state;
+ 
+-/* Current TCP RX packet handler */
+-static rxhand_tcp *tcp_packet_handler;
+-
+ /**
+  * tcp_get_tcp_state() - get current TCP state
+  *
+@@ -96,6 +93,9 @@ static void dummy_handler(uchar *pkt, unsigned int dport,
+ {
+ }
+ 
++/* Current TCP RX packet handler */
++static rxhand_tcp *tcp_packet_handler = dummy_handler;
++
+ /**
+  * tcp_set_tcp_handler() - set a handler to receive data
+  * @f: handler
+-- 
+2.34.1
+

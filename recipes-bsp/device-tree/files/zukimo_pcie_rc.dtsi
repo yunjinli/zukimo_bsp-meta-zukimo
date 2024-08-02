@@ -1,0 +1,53 @@
+&{/} {
+
+	// Zukimo Register Map (A65)
+	//
+	// Subsystems (reserved address range for work in progress sub-systems)
+	// 	0x0_2980_0000	8M		HPIO.PCIe	- No IPXACT descriptions for controller and phy yet available (solvenet ticket to be filed)
+	//
+	// MMIO - PCIe remote memory access
+	// 	0x0_4000_0000	1GB		MMIO (low) 	- Remote memory access via PCIe
+	// 	0x4_0000_0000	16GB	MMIO (high) - Remote memory via access PCIe / 32bit address masters (APU_DMA/NNA/NPU) with address LUT support
+
+	soc: soc {
+
+		pcie_rc0: pcie_rc@24070000 {
+			compatible = "dct,pcie-rc";
+			reg = <	0x00000000 0x24070000 0x00000000 0x00001000   // dct sig register space
+					0x00000000 0x29800000 0x00000000 0x00001000   // pcie controller control register
+					0x00000000 0x29b00000 0x00000000 0x00001000   // pcie controller address translation registers
+					0x00000000 0x40000000 0x00000000 0x01000000   // mapping area for pcie config space
+				>;
+			reg-names = "ctl\0dbi\0atu\0config";
+
+			bus-range = <0x00 0xff>;
+
+			#address-cells = <0x03>;
+			#size-cells = <0x02>;
+			ranges = <	0x02000000 0x00000000 0x41000000 0x00000000 0x41000000 0x00000000 0x3F000000     // pcie address area - MEM 32 bit
+						0x03000000 0x00000004 0x00000000 0x00000004 0x00000000 0x00000001 0x00000000     // pcie address area - MEM 64 bit
+					>;
+			
+			interrupt-parent = <&gic>;
+			interrupts = <	GIC_SPI 150 IRQ_TYPE_LEVEL_HIGH
+							GIC_SPI 151 IRQ_TYPE_LEVEL_HIGH >;
+			interrupt-names = "error\0ctl";
+			
+			// #interrupt-cells = <0x01>;
+			// interrupt-map-mask = <0x00 0x00 0x00 0x07>;
+			// interrupt-map = < 0x00 0x00 0x00 0x01 0x0b 0x00 0x1c8 0x04 0x00 0x00 0x00 0x02 0x0b 0x00 0x1c8 0x04 0x00 0x00 0x00 0x03 0x0b 0x00 0x1c8 0x04 0x00 0x00 0x00 0x04 0x0b 0x00 0x1c8 0x04>;
+			// clocks = <0x07 0x01 0x271>;
+			// power-domains = <0x05 0x40>;
+			// resets = <0x07 0x271>;
+			// snps,enable-cdm-check;
+
+			pcie-perstn-gpios = <&dct_gpio 0 0>;
+			pcie-clkreqn-gpios = <&dct_gpio 1 0>;
+			pcie-waken-gpios = <&dct_gpio 2 0>;
+
+			num-lanes = <0x04>;
+			max-link-speed = <0x03>;
+			status = "disabled";
+		};
+	};
+};

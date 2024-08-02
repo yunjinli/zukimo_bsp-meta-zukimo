@@ -1,0 +1,57 @@
+#!/bin/sh
+# Licensed on MIT
+
+network_enabled() {
+	if [ -z ${bootparam_ip} ]; then
+		return 1
+	fi
+	return 0
+}
+
+network_run() {
+	local ip
+
+	debug "Setting up network interface ..."
+
+	device="eth0"
+	gateway=""
+	ip="192.168.1.2"
+	mask="255.255.255.0"
+	server="192.168.1.1"
+
+	if [ "${bootparam_ip#*:}" != "${bootparam_ip}" ]; then
+		v=$(echo "$bootparam_ip" | cut -d: -f1)
+		if [ -n "$v" ]; then
+			ip=$v
+		fi
+		v=$(echo "$bootparam_ip" | cut -d: -f2)
+		if [ -n "$v" ]; then
+			server=$v
+		fi
+		v=$(echo "$bootparam_ip" | cut -d: -f3)
+		if [ -n "$v" ]; then
+			gateway=$v
+		fi
+		v=$(echo "$bootparam_ip" | cut -d: -f4)
+		if [ -n "$v" ]; then
+			mask=$v
+		fi
+		v=$(echo "$bootparam_ip" | cut -d: -f5)
+		if [ -n "$v" ]; then
+			device=$v
+		fi
+	fi
+
+	if [ -z "$ip" ]; then
+		fatal "ip is not set. Update ip boot option."
+	fi
+	if [ -z "$server" ]; then
+		fatal "server ip is not set. Update ip boot option."
+	fi
+
+	debug "ip -$ip-, server -$server-, mask -$mask-, gateway -$gateway-, device -$device-"
+
+	ip addr add $ip/$mask brd + dev $device
+	ip link set dev $device down
+	ip link set dev $device up
+}

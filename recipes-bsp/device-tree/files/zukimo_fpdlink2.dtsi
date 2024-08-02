@@ -1,0 +1,99 @@
+
+&{/} {
+	#address-cells = <2>;
+	#size-cells = <2>;
+
+	mipi2_dphy_rx: mipi2_dphy_rx@27040040 {
+		reg = <0x0 0x27040040 0x0 0xFF>,
+			  <0x0 0x27050000 0x0 0x14>;
+		compatible = "snps,dw-dphy-rx";
+		#phy-cells = <0>;
+		snps,dphy-frequency = <1600>;
+		bus-width = <12>;
+		snps,phy_type = <1>;
+
+		//status = "disabled";
+	};
+
+	csi2_2: csi2_2@27040000 {
+		compatible = "snps,dw-csi";
+		#address-cells = <1>;
+		#size-cells = <0>;
+		reg = <0x0 0x27040000 0x0 0x800>;
+		phys = <&mipi2_dphy_rx>;
+
+		clocks = <&mipi_rx_clk>;
+		clock-names = "mipi_rx_clk";
+
+		interrupt-parent = <&gic>;
+		interrupt-names ="mipi-rx-csi2-host";
+		interrupts = <GIC_SPI 167 IRQ_TYPE_LEVEL_HIGH>;	// #: mipi-rx-csi2-host at line 1
+
+		//status = "disabled";
+
+		ports {
+			port@0 {
+				/* Sink port */
+				reg = <0>;
+				csi2_2_in: endpoint {
+					remote-endpoint = <&ds90ub954_2_csi_out>;
+					data-lanes = <1 2 3 4>;
+				};
+			};
+
+			port@1 {
+				/* Source port */
+				reg = <1>;
+				csi2_2_out: endpoint {
+					remote-endpoint = <&isp1_pre2_in>;
+				};
+			};
+		};
+	};
+};
+
+
+&dct_i2c0 {
+	ds90ub954_2: deser@3a {
+		compatible = "ti,ds90ub954-q1";
+		reg = <0x3a>;
+
+		clock-names = "refclk";
+		clocks = <&mipi_rx_clk>;
+		powerdown-gpios = <&dct_gpio 18 1>;
+
+		// pool for connected cameras
+		i2c-alias-pool = <0x26 0x27>;
+		//status = "disabled";
+
+		ds90ub954_2_ports: ports {
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			// for the ub954 port 0/1 are the rx ports and port 2 is the tx
+			port@0 {
+				reg = <0>;
+
+				ds90ub954_2_csi_in: endpoint {
+					rx-mode = <0>;
+					remote-endpoint = <&ub953_4_out>;
+				};
+			};
+			port@2 {
+				reg = <2>;
+				ds90ub954_2_csi_out: endpoint {
+					clock-lanes = <0>;
+					data-lanes = <1 2 3 4>;
+					link-frequencies = /bits/ 64 <800000000>;
+					clock-noncontinuous;
+					remote-endpoint = <&csi2_2_in>;
+				};
+			};
+		};
+
+		ds90ub954_2_links: links {
+			#address-cells = <1>;
+			#size-cells = <0>;
+		};
+	};
+};

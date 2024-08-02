@@ -1,0 +1,61 @@
+From 7337cd968c7b916dfc6cd373b787e8732061423b Mon Sep 17 00:00:00 2001
+From: Ralph Hempel <ralph.hempel@dreamchip.de>
+Date: Thu, 25 Jan 2024 12:44:38 +0100
+Subject: [PATCH 23/34] macb/gem: fixes
+
+- disable userio
+- add MDC divider
+
+Upstream-Status: Pending
+---
+ drivers/net/ethernet/cadence/macb.h      | 2 ++
+ drivers/net/ethernet/cadence/macb_main.c | 9 ++++++---
+ 2 files changed, 8 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/net/ethernet/cadence/macb.h b/drivers/net/ethernet/cadence/macb.h
+index 1aa578c1ca4a..2f6bfb9f5396 100644
+--- a/drivers/net/ethernet/cadence/macb.h
++++ b/drivers/net/ethernet/cadence/macb.h
+@@ -696,6 +696,8 @@
+ #define GEM_CLK_DIV48				3
+ #define GEM_CLK_DIV64				4
+ #define GEM_CLK_DIV96				5
++#define GEM_CLK_DIV128				6
++#define GEM_CLK_DIV224				7
+ 
+ /* Constants for MAN register */
+ #define MACB_MAN_C22_SOF			1
+diff --git a/drivers/net/ethernet/cadence/macb_main.c b/drivers/net/ethernet/cadence/macb_main.c
+index 54b032a46b48..de34a74bf662 100644
+--- a/drivers/net/ethernet/cadence/macb_main.c
++++ b/drivers/net/ethernet/cadence/macb_main.c
+@@ -2599,8 +2599,12 @@ static u32 gem_mdc_clk_div(struct macb *bp)
+ 		config = GEM_BF(CLK, GEM_CLK_DIV48);
+ 	else if (pclk_hz <= 160000000)
+ 		config = GEM_BF(CLK, GEM_CLK_DIV64);
+-	else
++	else if (pclk_hz <= 240000000)
+ 		config = GEM_BF(CLK, GEM_CLK_DIV96);
++	else if (pclk_hz <= 320000000)
++		config = GEM_BF(CLK, GEM_CLK_DIV128);
++	else
++		config = GEM_BF(CLK, GEM_CLK_DIV224);
+ 
+ 	return config;
+ }
+@@ -4700,11 +4704,10 @@ static const struct macb_config sama5d3macb_config = {
+ };
+ 
+ static const struct macb_config pc302gem_config = {
+-	.caps = MACB_CAPS_SG_DISABLED | MACB_CAPS_GIGABIT_MODE_AVAILABLE,
++	.caps = MACB_CAPS_USRIO_DISABLED | MACB_CAPS_SG_DISABLED | MACB_CAPS_GIGABIT_MODE_AVAILABLE,
+ 	.dma_burst_length = 16,
+ 	.clk_init = macb_clk_init,
+ 	.init = macb_init,
+-	.usrio = &macb_default_usrio,
+ };
+ 
+ static const struct macb_config sama5d2_config = {
+-- 
+2.34.1
+

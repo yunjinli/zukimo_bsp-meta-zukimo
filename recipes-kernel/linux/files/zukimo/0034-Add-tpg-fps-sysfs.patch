@@ -1,0 +1,70 @@
+From 287b86d70c20b6e82d2894f26c8897c33d80fe47 Mon Sep 17 00:00:00 2001
+From: Jan Meyer-Siemon <Jan.Meyer-Siemon@dreamchip.de>
+Date: Mon, 3 Jun 2024 13:22:30 +0200
+Subject: [PATCH 34/34] Add tpg fps sysfs
+
+Upstream-Status: Pending
+---
+ drivers/media/i2c/ds90ub960.c | 22 ++++++++++++++++++++--
+ 1 file changed, 20 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/media/i2c/ds90ub960.c b/drivers/media/i2c/ds90ub960.c
+index 963268d2fc29..8bb1ffc3b69e 100644
+--- a/drivers/media/i2c/ds90ub960.c
++++ b/drivers/media/i2c/ds90ub960.c
+@@ -428,7 +428,7 @@ struct ub960_errors {
+ };
+ 
+ static struct ub960_errors ub960_err_stats[UB960_MAX_RX_NPORTS];
+-
++static unsigned long ub960_tpg_fps = 30;
+ 
+ struct ub960_hw_data {
+ 	const char *model;
+@@ -3270,7 +3270,7 @@ static void ub960_enable_tpg(struct ub960_data *priv, int tpg_num)
+ 	bar_size = line_size / num_cbars;
+ 	act_lpf = height;
+ 	tot_lpf = act_lpf + blank_lines;
+-	line_pd = 100000000 / 60 / tot_lpf;
++	line_pd = 100000000 / ub960_tpg_fps / tot_lpf;
+ 
+ 	/* Disable forwarding from FPD-3 RX ports */
+ 	ub960_read(priv, UB960_SR_FWD_CTL1, &priv->stored_fwd_ctl);
+@@ -4152,9 +4152,26 @@ static ssize_t err_irq_show(struct device *dev,
+ 
+ static DEVICE_ATTR_RO(err_irq);
+ 
++static ssize_t tpg_fps_show(struct device *dev,
++				      struct device_attribute *attr, char *buf)
++{
++	return sprintf(buf, "%d\n", ub960_tpg_fps);
++}
++
++static ssize_t tpg_fps_store(struct device *dev,
++				       struct device_attribute *attr,
++				       const char *buf, size_t count)
++{
++   if (kstrtoul(buf, 10, &ub960_tpg_fps)) ub960_tpg_fps = 30;
++
++	return count;
++}
++static DEVICE_ATTR_RW(tpg_fps);
++
+ int ub960_create_sysfs(struct device *dev)
+ {
+ 	device_create_file(dev, &dev_attr_err_irq);
++	device_create_file(dev, &dev_attr_tpg_fps);
+ 
+ 	return 0;
+ }
+@@ -4162,6 +4179,7 @@ int ub960_create_sysfs(struct device *dev)
+ int ub960__remove_sysfs(struct device *dev)
+ {
+ 	device_remove_file(dev, &dev_attr_err_irq);
++	device_remove_file(dev, &dev_attr_tpg_fps);
+ 
+ 	return 0;
+ }
+-- 
+2.34.1
+

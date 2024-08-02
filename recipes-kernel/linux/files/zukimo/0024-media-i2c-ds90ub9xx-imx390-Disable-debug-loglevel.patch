@@ -1,0 +1,352 @@
+From 7d66086f7c3bad91bcee1ae3245acd3ae2b0433c Mon Sep 17 00:00:00 2001
+From: Thomas Metzler <thomas.metzler@dreamchip.de>
+Date: Mon, 5 Feb 2024 19:48:07 +0100
+Subject: [PATCH 24/34] media: i2c: ds90ub9xx, imx390 Disable debug loglevel.
+
+Upstream-Status: Pending
+---
+ drivers/media/i2c/ds90ub953.c |   2 +-
+ drivers/media/i2c/ds90ub960.c | 215 +++++++++++++++++++++++++++-------
+ drivers/media/i2c/imx390.c    |   2 +-
+ 3 files changed, 174 insertions(+), 45 deletions(-)
+
+diff --git a/drivers/media/i2c/ds90ub953.c b/drivers/media/i2c/ds90ub953.c
+index 942fbcee2fad..5e8be2651fb4 100644
+--- a/drivers/media/i2c/ds90ub953.c
++++ b/drivers/media/i2c/ds90ub953.c
+@@ -7,7 +7,7 @@
+  * Copyright (c) 2019 Luca Ceresoli <luca@lucaceresoli.net>
+  * Copyright (c) 2023 Tomi Valkeinen <tomi.valkeinen@ideasonboard.com>
+  */
+-#define DEBUG
++//#define DEBUG
+ #include <linux/clk-provider.h>
+ #include <linux/clk.h>
+ #include <linux/delay.h>
+diff --git a/drivers/media/i2c/ds90ub960.c b/drivers/media/i2c/ds90ub960.c
+index 216e847018fd..f1c1b391399c 100644
+--- a/drivers/media/i2c/ds90ub960.c
++++ b/drivers/media/i2c/ds90ub960.c
+@@ -25,7 +25,8 @@
+  *   are children of the same i2c-adapter where the deserializer resides.
+  * - i2c-atr could be made embeddable instead of allocatable.
+  */
+-#define DEBUG
++//#define DEBUG
++//#define VERBOSE_DEBUG
+ #include <linux/bitops.h>
+ #include <linux/clk.h>
+ #include <linux/delay.h>
+@@ -52,6 +53,8 @@
+ #include <media/v4l2-fwnode.h>
+ #include <media/v4l2-subdev.h>
+ 
++#include <linux/debugfs.h>
++
+ #define MHZ(v) ((u32)((v) * 1000000U))
+ 
+ #define UB960_POLL_TIME_MS	500
+@@ -402,6 +405,31 @@
+ #define UB960_MAX_EQ_LEVEL  14
+ #define UB960_NUM_EQ_LEVELS (UB960_MAX_EQ_LEVEL - UB960_MIN_EQ_LEVEL + 1)
+ 
++
++struct ub960_errors {
++	u32 parity;
++	u32 bcc_crc;
++	u32 bcc_seq;
++	u32 ll_unstable;
++	u32 fpd3_encode;
++	u32 bus;
++	u32 csi;
++	u32 ecc1;
++	u32 ecc2;
++	u32 checksum;
++	u32 csi_len;
++	u32 bcc;
++	u32 bcc_resp;
++	u32 bcc_slave_timeout;
++	u32 bcc_slave;
++	u32 bcc_master_timeout;
++	u32 bcc_master;
++	u32 bcc_seq_stat;
++};
++
++static struct ub960_errors ub960_err_stats[UB960_MAX_RX_NPORTS];
++
++
+ struct ub960_hw_data {
+ 	const char *model;
+ 	u8 num_rxports;
+@@ -2175,71 +2203,108 @@ static void ub960_rxport_handle_events(struct ub960_data *priv, u8 nport)
+ 	if (ret)
+ 		return;
+ 
++
+ 	if (rx_port_sts1 & UB960_RR_RX_PORT_STS1_PARITY_ERROR) {
+ 		u16 v;
+ 
+ 		ret = ub960_rxport_read16(priv, nport, UB960_RR_RX_PAR_ERR_HI,
+ 					  &v);
+-		if (!ret)
+-			dev_err(dev, "rx%u parity errors: %u\n", nport, v);
++		if (!ret) {
++			dev_dbg(dev, "rx%u parity errors: %u\n", nport, v);
++			ub960_err_stats[nport].parity;
++		}
+ 	}
+ 
+-	if (rx_port_sts1 & UB960_RR_RX_PORT_STS1_BCC_CRC_ERROR)
+-		dev_err(dev, "rx%u BCC CRC error\n", nport);
++	if (rx_port_sts1 & UB960_RR_RX_PORT_STS1_BCC_CRC_ERROR) {
++		dev_dbg(dev, "rx%u BCC CRC error\n", nport);
++		ub960_err_stats[nport].bcc_crc;
++	}
+ 
+-	if (rx_port_sts1 & UB960_RR_RX_PORT_STS1_BCC_SEQ_ERROR)
+-		dev_err(dev, "rx%u BCC SEQ error\n", nport);
++	if (rx_port_sts1 & UB960_RR_RX_PORT_STS1_BCC_SEQ_ERROR) {
++		dev_dbg(dev, "rx%u BCC SEQ error\n", nport);
++		ub960_err_stats[nport].bcc_seq;
++	}
+ 
+-	if (rx_port_sts2 & UB960_RR_RX_PORT_STS2_LINE_LEN_UNSTABLE)
+-		dev_err(dev, "rx%u line length unstable\n", nport);
++	if (rx_port_sts2 & UB960_RR_RX_PORT_STS2_LINE_LEN_UNSTABLE) {
++		dev_dbg(dev, "rx%u line length unstable\n", nport);
++		ub960_err_stats[nport].ll_unstable;
++	}
+ 
+-	if (rx_port_sts2 & UB960_RR_RX_PORT_STS2_FPD3_ENCODE_ERROR)
+-		dev_err(dev, "rx%u FPD3 encode error\n", nport);
++	if (rx_port_sts2 & UB960_RR_RX_PORT_STS2_FPD3_ENCODE_ERROR) {
++		dev_dbg(dev, "rx%u FPD3 encode error\n", nport);
++		ub960_err_stats[nport].fpd3_encode;
++	}
+ 
+-	if (rx_port_sts2 & UB960_RR_RX_PORT_STS2_BUFFER_ERROR)
+-		dev_err(dev, "rx%u buffer error\n", nport);
++	if (rx_port_sts2 & UB960_RR_RX_PORT_STS2_BUFFER_ERROR) {
++		dev_dbg(dev, "rx%u buffer error\n", nport);
++		ub960_err_stats[nport].bus;
++	}
+ 
+-	if (csi_rx_sts)
+-		dev_err(dev, "rx%u CSI error: %#02x\n", nport, csi_rx_sts);
++	if (csi_rx_sts) {
++		dev_dbg(dev, "rx%u CSI error: %#02x\n", nport, csi_rx_sts);
++		ub960_err_stats[nport].csi;
++	}
+ 
+-	if (csi_rx_sts & UB960_RR_CSI_RX_STS_ECC1_ERR)
+-		dev_err(dev, "rx%u CSI ECC1 error\n", nport);
++	if (csi_rx_sts & UB960_RR_CSI_RX_STS_ECC1_ERR) {
++		dev_dbg(dev, "rx%u CSI ECC1 error\n", nport);
++		ub960_err_stats[nport].ecc1;
++	}
+ 
+-	if (csi_rx_sts & UB960_RR_CSI_RX_STS_ECC2_ERR)
+-		dev_err(dev, "rx%u CSI ECC2 error\n", nport);
++	if (csi_rx_sts & UB960_RR_CSI_RX_STS_ECC2_ERR) {
++		dev_dbg(dev, "rx%u CSI ECC2 error\n", nport);
++		ub960_err_stats[nport].ecc2;
++	}
+ 
+-	if (csi_rx_sts & UB960_RR_CSI_RX_STS_CKSUM_ERR)
+-		dev_err(dev, "rx%u CSI checksum error\n", nport);
++	if (csi_rx_sts & UB960_RR_CSI_RX_STS_CKSUM_ERR) {
++		dev_dbg(dev, "rx%u CSI checksum error\n", nport);
++		ub960_err_stats[nport].checksum;
++	}
+ 
+-	if (csi_rx_sts & UB960_RR_CSI_RX_STS_LENGTH_ERR)
+-		dev_err(dev, "rx%u CSI length error\n", nport);
++	if (csi_rx_sts & UB960_RR_CSI_RX_STS_LENGTH_ERR) {
++		dev_dbg(dev, "rx%u CSI length error\n", nport);
++		ub960_err_stats[nport].csi_len;
++	}
+ 
+-	if (bcc_sts)
+-		dev_err(dev, "rx%u BCC error: %#02x\n", nport, bcc_sts);
++	if (bcc_sts) {
++		dev_dbg(dev, "rx%u BCC error: %#02x\n", nport, bcc_sts);
++		ub960_err_stats[nport].bcc;
++	}
+ 
+-	if (bcc_sts & UB960_RR_BCC_STATUS_RESP_ERR)
+-		dev_err(dev, "rx%u BCC response error", nport);
++	if (bcc_sts & UB960_RR_BCC_STATUS_RESP_ERR) {
++		dev_dbg(dev, "rx%u BCC response error", nport);
++		ub960_err_stats[nport].bcc_resp;
++	}
+ 
+-	if (bcc_sts & UB960_RR_BCC_STATUS_SLAVE_TO)
+-		dev_err(dev, "rx%u BCC slave timeout", nport);
++	if (bcc_sts & UB960_RR_BCC_STATUS_SLAVE_TO) {
++		dev_dbg(dev, "rx%u BCC slave timeout", nport);
++		ub960_err_stats[nport].bcc_slave_timeout;
++	}
+ 
+-	if (bcc_sts & UB960_RR_BCC_STATUS_SLAVE_ERR)
+-		dev_err(dev, "rx%u BCC slave error", nport);
++	if (bcc_sts & UB960_RR_BCC_STATUS_SLAVE_ERR) {
++		dev_dbg(dev, "rx%u BCC slave error", nport);
++		ub960_err_stats[nport].bcc_slave;
++	}
+ 
+-	if (bcc_sts & UB960_RR_BCC_STATUS_MASTER_TO)
+-		dev_err(dev, "rx%u BCC master timeout", nport);
++	if (bcc_sts & UB960_RR_BCC_STATUS_MASTER_TO) {
++		dev_dbg(dev, "rx%u BCC master timeout", nport);
++		ub960_err_stats[nport].bcc_master_timeout;
++	}
+ 
+-	if (bcc_sts & UB960_RR_BCC_STATUS_MASTER_ERR)
+-		dev_err(dev, "rx%u BCC master error", nport);
++	if (bcc_sts & UB960_RR_BCC_STATUS_MASTER_ERR) {
++		dev_dbg(dev, "rx%u BCC master error", nport);
++		ub960_err_stats[nport].bcc_master;
++	}
+ 
+-	if (bcc_sts & UB960_RR_BCC_STATUS_SEQ_ERROR)
+-		dev_err(dev, "rx%u BCC sequence error", nport);
++	if (bcc_sts & UB960_RR_BCC_STATUS_SEQ_ERROR) {
++		dev_dbg(dev, "rx%u BCC sequence error", nport);
++		ub960_err_stats[nport].bcc_seq_stat;
++	}
+ 
+ 	if (rx_port_sts2 & UB960_RR_RX_PORT_STS2_LINE_LEN_CHG) {
+ 		u16 v;
+ 
+ 		ret = ub960_rxport_read16(priv, nport, UB960_RR_LINE_LEN_1, &v);
+-		if (!ret)
++		if (!ret) 
+ 			dev_dbg(dev, "rx%u line len changed: %u\n", nport, v);
+ 	}
+ 
+@@ -3122,14 +3187,10 @@ static irqreturn_t ub960_handle_events(int irq, void *arg)
+ 	if (ret || !int_sts)
+ 		return IRQ_NONE;
+ 
+-	dev_dbg(&priv->client->dev, "INTERRUPT_STS %x\n", int_sts);
+-
+ 	ret = ub960_read(priv, UB960_SR_FWD_STS, &fwd_sts);
+ 	if (ret)
+ 		return IRQ_NONE;
+ 
+-	dev_dbg(&priv->client->dev, "FWD_STS %#02x\n", fwd_sts);
+-
+ 	for (i = 0; i < priv->hw_data->num_txports; i++) {
+ 		if (int_sts & UB960_SR_INTERRUPT_STS_IS_CSI_TX(i))
+ 			ub960_csi_handle_events(priv, i);
+@@ -3878,6 +3939,69 @@ static void ub960_disable_core_hw(struct ub960_data *priv)
+ 	regulator_disable(priv->vddio);
+ }
+ 
++static ssize_t err_irq_show(struct device *dev,
++				  struct device_attribute *attr, char *buf)
++{
++	char buffer[1024];
++
++	snprintf(buffer, 1024, "Statistics:\n"
++	"rx0 parity errors: 		%u\n"
++	"rx0 BCC CRC error:			%u\n"
++	"rx0 BCC SEQ error:			%u\n"
++	"rx0 line length unstable:	%u\n"
++	"rx0 FPD3 encode error:		%u\n"
++	"rx0 buffer error:			%u\n"
++	"rx0 CSI error:				%u\n"
++	"rx0 CSI ECC1 error:		%u\n"
++	"rx0 CSI ECC2 error:		%u\n"
++	"rx0 CSI checksum error:	%u\n"
++	"rx0 CSI length error:		%u\n"
++	"rx0 BCC error:				%u\n"
++	"rx0 BCC response error:	%u\n"
++	"rx0 BCC slave timeout:		%u\n"
++	"rx0 BCC slave error:		%u\n"
++	"rx0 BCC master timeout:	%u\n"
++	"rx0 BCC master error:		%u\n"
++	"rx0 BCC sequence error:	%u\n"	
++
++	, ub960_err_stats[0].parity
++	, ub960_err_stats[0].bcc_crc
++	, ub960_err_stats[0].bcc_seq
++	, ub960_err_stats[0].ll_unstable
++	, ub960_err_stats[0].fpd3_encode
++	, ub960_err_stats[0].bus
++	, ub960_err_stats[0].csi
++	, ub960_err_stats[0].ecc1
++	, ub960_err_stats[0].ecc2
++	, ub960_err_stats[0].checksum
++	, ub960_err_stats[0].csi_len
++	, ub960_err_stats[0].bcc
++	, ub960_err_stats[0].bcc_resp
++	, ub960_err_stats[0].bcc_slave_timeout
++	, ub960_err_stats[0].bcc_slave
++	, ub960_err_stats[0].bcc_master_timeout
++	, ub960_err_stats[0].bcc_master
++	, ub960_err_stats[0].bcc_seq_stat);
++
++	return strlcpy(buf, buffer, PAGE_SIZE);
++}
++
++static DEVICE_ATTR_RO(err_irq);
++
++int ub960_create_sysfs(struct device *dev)
++{
++	device_create_file(dev, &dev_attr_err_irq);
++
++	return 0;
++}
++
++int ub960__remove_sysfs(struct device *dev)
++{
++	device_remove_file(dev, &dev_attr_err_irq);
++
++	return 0;
++}
++
+ static int ub960_probe(struct i2c_client *client)
+ {
+ 	struct device *dev = &client->dev;
+@@ -3978,6 +4102,8 @@ static int ub960_probe(struct i2c_client *client)
+ 	schedule_delayed_work(&priv->poll_work,
+ 			      msecs_to_jiffies(UB960_POLL_TIME_MS));
+ 
++	ub960_create_sysfs(dev);
++
+ 	return 0;
+ 
+ err_free_sers:
+@@ -3998,11 +4124,14 @@ static int ub960_probe(struct i2c_client *client)
+ 
+ static void ub960_remove(struct i2c_client *client)
+ {
++	struct device *dev = &client->dev;
+ 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
+ 	struct ub960_data *priv = sd_to_ub960(sd);
+ 
+-	cancel_delayed_work_sync(&priv->poll_work);
++	ub960_create_sysfs(dev);
+ 
++	cancel_delayed_work_sync(&priv->poll_work);
++	
+ 	ub960_destroy_subdev(priv);
+ 	ub960_rxport_remove_serializers(priv);
+ 	ub960_uninit_atr(priv);
+diff --git a/drivers/media/i2c/imx390.c b/drivers/media/i2c/imx390.c
+index 4d2360fcd565..b8af1cc9edd8 100644
+--- a/drivers/media/i2c/imx390.c
++++ b/drivers/media/i2c/imx390.c
+@@ -6,7 +6,7 @@
+  *
+  * Copyright (c) 2021 Tomi Valkeinen <tomi.valkeinen@ideasonboard.com>
+  */
+-#define DEBUG
++//#define DEBUG
+ #include <linux/delay.h>
+ #include <linux/clk.h>
+ #include <linux/gpio/consumer.h>
+-- 
+2.34.1
+

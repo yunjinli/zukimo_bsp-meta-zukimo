@@ -1,0 +1,52 @@
+From c1555cea9c8790180a5f6475ee72adc348271f95 Mon Sep 17 00:00:00 2001
+From: Tomi Valkeinen <tomi.valkeinen@ideasonboard.com>
+Date: Mon, 31 Jul 2023 16:24:39 +0300
+Subject: [PATCH 18/34] media: i2c: ds90ub953: Handle
+ V4L2_MBUS_CSI2_NONCONTINUOUS_CLOCK
+
+Upstream-Status: Pending
+
+Handle V4L2_MBUS_CSI2_NONCONTINUOUS_CLOCK flag to configure the CSI-2 RX
+continuous/non-continuous clock register.
+
+Signed-off-by: Tomi Valkeinen <tomi.valkeinen@ideasonboard.com>
+Reviewed-by: Laurent Pinchart <laurent.pinchart@ideasonboard.com>
+Reviewed-by: Andy Shevchenko <andriy.shevchenko@linux.intel.com>
+---
+ drivers/media/i2c/ds90ub953.c | 6 +++++-
+ 1 file changed, 5 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/media/i2c/ds90ub953.c b/drivers/media/i2c/ds90ub953.c
+index 3969414f2a8a..a8c12c312617 100644
+--- a/drivers/media/i2c/ds90ub953.c
++++ b/drivers/media/i2c/ds90ub953.c
+@@ -138,6 +138,7 @@ struct ub953_data {
+ 	struct regmap		*regmap;
+ 
+ 	u32			num_data_lanes;
++	bool			non_continous_clk;
+ 
+ 	struct gpio_chip	gpio_chip;
+ 
+@@ -1140,6 +1141,9 @@ static int ub953_parse_dt(struct ub953_data *priv)
+ 
+ 	priv->num_data_lanes = nlanes;
+ 
++	priv->non_continous_clk = vep.bus.mipi_csi2.flags &
++				  V4L2_MBUS_CSI2_NONCONTINUOUS_CLOCK;
++
+ 	return 0;
+ }
+ 
+@@ -1207,7 +1211,7 @@ static int ub953_hw_init(struct ub953_data *priv)
+ 		return dev_err_probe(dev, ret, "i2c init failed\n");
+ 
+ 	ub953_write(priv, UB953_REG_GENERAL_CFG,
+-		    UB953_REG_GENERAL_CFG_CONT_CLK |
++		    (priv->non_continous_clk ? 0 : UB953_REG_GENERAL_CFG_CONT_CLK) |
+ 		    ((priv->num_data_lanes - 1) << UB953_REG_GENERAL_CFG_CSI_LANE_SEL_SHIFT) |
+ 		    UB953_REG_GENERAL_CFG_CRC_TX_GEN_ENABLE);
+ 
+-- 
+2.34.1
+

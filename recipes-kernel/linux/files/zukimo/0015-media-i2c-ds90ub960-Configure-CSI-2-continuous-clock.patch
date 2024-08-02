@@ -1,0 +1,60 @@
+From 6b5013ddbb75e6f9dd125a7a0745cf56c59edac5 Mon Sep 17 00:00:00 2001
+From: Tomi Valkeinen <tomi.valkeinen@ideasonboard.com>
+Date: Mon, 31 Jul 2023 16:24:36 +0300
+Subject: [PATCH 15/34] media: i2c: ds90ub960: Configure CSI-2 continuous clock
+
+Upstream-Status: Pending
+
+Use 'clock-noncontinuous' from DT to configure the
+continuous/non-continuous clock setting for the TX ports.
+
+Signed-off-by: Tomi Valkeinen <tomi.valkeinen@ideasonboard.com>
+Reviewed-by: Laurent Pinchart <laurent.pinchart@ideasonboard.com>
+Reviewed-by: Andy Shevchenko <andriy.shevchenko@linux.intel.com>
+---
+ drivers/media/i2c/ds90ub960.c | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/drivers/media/i2c/ds90ub960.c b/drivers/media/i2c/ds90ub960.c
+index 516e39c7865b..47097e2318b2 100644
+--- a/drivers/media/i2c/ds90ub960.c
++++ b/drivers/media/i2c/ds90ub960.c
+@@ -149,6 +149,7 @@
+ 
+ #define UB960_TR_CSI_CTL			0x33
+ #define UB960_TR_CSI_CTL_CSI_CAL_EN		BIT(6)
++#define UB960_TR_CSI_CTL_CSI_CONTS_CLOCK	BIT(1)
+ #define UB960_TR_CSI_CTL_CSI_ENABLE		BIT(0)
+ 
+ #define UB960_TR_CSI_CTL2			0x34
+@@ -486,6 +487,7 @@ struct ub960_txport {
+ 	u8                      nport;	/* TX port number, and index in priv->txport[] */
+ 
+ 	u32 num_data_lanes;
++	bool non_continous_clk;
+ };
+ 
+ struct ub960_data {
+@@ -1134,6 +1136,9 @@ static int ub960_parse_dt_txport(struct ub960_data *priv,
+ 		goto err_free_txport;
+ 	}
+ 
++	txport->non_continous_clk = vep.bus.mipi_csi2.flags &
++				    V4L2_MBUS_CSI2_NONCONTINUOUS_CLOCK;
++
+ 	txport->num_data_lanes = vep.bus.mipi_csi2.num_data_lanes;
+ 
+ 	if (vep.nr_of_link_frequencies != 1) {
+@@ -1745,6 +1750,9 @@ static void ub960_init_tx_port(struct ub960_data *priv,
+ 
+ 	csi_ctl |= (4 - txport->num_data_lanes) << 4;
+ 
++	if (!txport->non_continous_clk)
++		csi_ctl |= UB960_TR_CSI_CTL_CSI_CONTS_CLOCK;
++
+ 	ub960_txport_write(priv, nport, UB960_TR_CSI_CTL, csi_ctl);
+ }
+ 
+-- 
+2.34.1
+

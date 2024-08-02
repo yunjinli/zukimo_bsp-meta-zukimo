@@ -1,0 +1,476 @@
+From 207cc8ee37a834a65779fe8382c511a64eb9c670 Mon Sep 17 00:00:00 2001
+From: Axel Ludszuweit <axel.ludszuweit@dreamchip.de>
+Date: Thu, 1 Feb 2024 09:44:51 +0100
+Subject: [PATCH 10/12] zukimo: add dct sdhci cadence
+
+Upstream-Status: Pending
+---
+ drivers/mmc/Kconfig             |  12 +
+ drivers/mmc/Makefile            |   1 +
+ drivers/mmc/dct-sdhci-cadence.c | 422 ++++++++++++++++++++++++++++++++
+ 3 files changed, 435 insertions(+)
+ create mode 100644 drivers/mmc/dct-sdhci-cadence.c
+
+diff --git a/drivers/mmc/Kconfig b/drivers/mmc/Kconfig
+index 5d4e22a90f..8a59607f5c 100644
+--- a/drivers/mmc/Kconfig
++++ b/drivers/mmc/Kconfig
+@@ -565,6 +565,18 @@ config MMC_SDHCI_CADENCE
+ 
+ 	  If unsure, say N.
+ 
++config MMC_DCT_SDHCI_CADENCE
++	bool "SDHCI support for the Dreamchip Cadence"
++	depends on BLK && DM_MMC
++	depends on MMC_SDHCI
++	depends on OF_CONTROL
++	help
++	  This selects the Cadence SD/SDIO/eMMC driver.
++
++	  If you have a controller with this interface, say Y here.
++
++	  If unsure, say N.
++
+ config MMC_DCT_SDHC
+ 	bool "Support for the Dreamchip SDHC driver"
+ 	depends on BLK && DM_MMC
+diff --git a/drivers/mmc/Makefile b/drivers/mmc/Makefile
+index 45bd576ca7..311364e536 100644
+--- a/drivers/mmc/Makefile
++++ b/drivers/mmc/Makefile
+@@ -85,3 +85,4 @@ obj-$(CONFIG_MMC_BCM2835)		+= bcm2835_sdhost.o
+ obj-$(CONFIG_MMC_MTK)			+= mtk-sd.o
+ obj-$(CONFIG_MMC_SDHCI_F_SDH30)		+= f_sdh30.o
+ obj-$(CONFIG_MMC_DCT_SDHC) += dct_sdhc.o
++obj-$(CONFIG_MMC_DCT_SDHCI_CADENCE) += dct-sdhci-cadence.o
+diff --git a/drivers/mmc/dct-sdhci-cadence.c b/drivers/mmc/dct-sdhci-cadence.c
+new file mode 100644
+index 0000000000..5a1cb8766e
+--- /dev/null
++++ b/drivers/mmc/dct-sdhci-cadence.c
+@@ -0,0 +1,422 @@
++// SPDX-License-Identifier: GPL-2.0+
++/*
++ * Copyright (C) 2016 Socionext Inc.
++ *   Author: Masahiro Yamada <yamada.masahiro@socionext.com>
++ */
++
++#include <common.h>
++#include <dm.h>
++#include <asm/global_data.h>
++#include <dm/device_compat.h>
++#include <linux/bitfield.h>
++#include <linux/bitops.h>
++#include <linux/bug.h>
++#include <linux/io.h>
++#include <linux/iopoll.h>
++#include <linux/sizes.h>
++#include <linux/libfdt.h>
++#include <linux/delay.h>
++#include <mmc.h>
++#include <sdhci.h>
++
++/* HRS - Host Register Set (specific to Cadence) */
++#define SDHCI_CDNS_HRS04		0x10		/* PHY access port */
++#define SDHCI_CDNS_HRS06		0x18		/* eMMC control */
++
++#define   SDHCI_CDNS_HRS06_TUNE_UP		BIT(15)
++#define   SDHCI_CDNS_HRS06_TUNE			GENMASK(13, 8)
++#define   SDHCI_CDNS_HRS06_MODE			GENMASK(2, 0)
++#define   SDHCI_CDNS_HRS06_MODE_SD		0x0
++#define   SDHCI_CDNS_HRS06_MODE_MMC_SDR		0x2
++#define   SDHCI_CDNS_HRS06_MODE_MMC_DDR		0x3
++#define   SDHCI_CDNS_HRS06_MODE_MMC_HS200	0x4
++#define   SDHCI_CDNS_HRS06_MODE_MMC_HS400	0x5
++#define   SDHCI_CDNS_HRS06_MODE_MMC_HS400ES	0x6
++
++#define SDHCI_CDNS_HRS00        0x00
++#define SDHCI_CDNS_HRS01        0x04
++#define SDHCI_CDNS_HRS02        0x08
++#define SDHCI_CDNS_HRS03        0x0c
++#define SDHCI_CDNS_HRS05        0x14
++#define SDHCI_CDNS_HRS07        0x1c
++#define SDHCI_CDNS_HRS08        0x20
++#define SDHCI_CDNS_HRS09        0x24
++#define SDHCI_CDNS_HRS10        0x28
++#define SDHCI_CDNS_HRS11        0x2c
++#define SDHCI_CDNS_HRS12        0x30
++#define SDHCI_CDNS_HRS13        0x34
++#define SDHCI_CDNS_HRS14        0x38
++#define SDHCI_CDNS_HRS15        0x3c
++#define SDHCI_CDNS_HRS16        0x40
++
++/* SRS - Slot Register Set (SDHCI-compatible) */
++#define SDHCI_CDNS_SRS_BASE		0x200
++
++/* PHY */
++#define SDHCI_CDNS_PHY_DLY_SD_HS	0x00
++#define SDHCI_CDNS_PHY_DLY_SD_DEFAULT	0x01
++#define SDHCI_CDNS_PHY_DLY_UHS_SDR12	0x02
++#define SDHCI_CDNS_PHY_DLY_UHS_SDR25	0x03
++#define SDHCI_CDNS_PHY_DLY_UHS_SDR50	0x04
++#define SDHCI_CDNS_PHY_DLY_UHS_DDR50	0x05
++#define SDHCI_CDNS_PHY_DLY_EMMC_LEGACY	0x06
++#define SDHCI_CDNS_PHY_DLY_EMMC_SDR	0x07
++#define SDHCI_CDNS_PHY_DLY_EMMC_DDR	0x08
++#define SDHCI_CDNS_PHY_DLY_SDCLK	0x0b
++#define SDHCI_CDNS_PHY_DLY_HSMMC	0x0c
++#define SDHCI_CDNS_PHY_DLY_STROBE	0x0d
++
++
++/*
++ * The tuned val register is 6 bit-wide, but not the whole of the range is
++ * available.  The range 0-42 seems to be available (then 43 wraps around to 0)
++ * but I am not quite sure if it is official.  Use only 0 to 39 for safety.
++ */
++#define SDHCI_CDNS_MAX_TUNING_LOOP	40
++
++struct dct_sdhci_cdns_plat {
++	struct mmc_config cfg;
++	struct mmc mmc;
++	void __iomem *hrs_addr;
++};
++
++struct dct_sdhci_cdns_phy_cfg {
++	const char *property;
++	u8 addr;
++};
++
++static inline u32 dct_sdhci_cdns_hrs_read(struct dct_sdhci_cdns_plat  *plat, u32 reg)
++{
++	return readl(plat->hrs_addr + reg);
++}
++
++static inline void dct_sdhci_cdns_hrs_write(struct dct_sdhci_cdns_plat *plat, u32 val, u32 reg)
++{
++	writel(val, plat->hrs_addr + reg);
++}
++#if 0
++static const struct dct_sdhci_cdns_phy_cfg dct_sdhci_cdns_phy_cfgs[] = {
++	{ "cdns,phy-input-delay-sd-highspeed", SDHCI_CDNS_PHY_DLY_SD_HS, },
++	{ "cdns,phy-input-delay-legacy", SDHCI_CDNS_PHY_DLY_SD_DEFAULT, },
++	{ "cdns,phy-input-delay-sd-uhs-sdr12", SDHCI_CDNS_PHY_DLY_UHS_SDR12, },
++	{ "cdns,phy-input-delay-sd-uhs-sdr25", SDHCI_CDNS_PHY_DLY_UHS_SDR25, },
++	{ "cdns,phy-input-delay-sd-uhs-sdr50", SDHCI_CDNS_PHY_DLY_UHS_SDR50, },
++	{ "cdns,phy-input-delay-sd-uhs-ddr50", SDHCI_CDNS_PHY_DLY_UHS_DDR50, },
++	{ "cdns,phy-input-delay-mmc-highspeed", SDHCI_CDNS_PHY_DLY_EMMC_SDR, },
++	{ "cdns,phy-input-delay-mmc-ddr", SDHCI_CDNS_PHY_DLY_EMMC_DDR, },
++	{ "cdns,phy-dll-delay-sdclk", SDHCI_CDNS_PHY_DLY_SDCLK, },
++	{ "cdns,phy-dll-delay-sdclk-hsmmc", SDHCI_CDNS_PHY_DLY_HSMMC, },
++	{ "cdns,phy-dll-delay-strobe", SDHCI_CDNS_PHY_DLY_STROBE, },
++};
++#endif
++
++#if 0
++static u32 dct_sdhci_cdns_read_phy_reg(struct dct_sdhci_cdns_plat *plat,
++		u16 addr)
++{
++	u32 data;
++	dct_sdhci_cdns_hrs_write(plat, addr, SDHCI_CDNS_HRS04);
++	data = dct_sdhci_cdns_hrs_read(plat, SDHCI_CDNS_HRS05);
++	return data;
++}
++#endif
++
++static int dct_sdhci_cdns_write_phy_reg(struct dct_sdhci_cdns_plat *plat,
++				    u16 addr, u32 data)
++{
++	dct_sdhci_cdns_hrs_write(plat, addr, SDHCI_CDNS_HRS04);
++	dct_sdhci_cdns_hrs_write(plat, data, SDHCI_CDNS_HRS05);
++	return 0;
++}
++
++static void dct_sdhci_cdns_phy_reset(struct dct_sdhci_cdns_plat *plat, u32 assert)
++{
++    u32 reg;
++    int timeout;
++	struct mmc *mmc = &plat->mmc;
++
++    reg = dct_sdhci_cdns_hrs_read(plat, SDHCI_CDNS_HRS09);
++    if (assert) {
++        reg &= ~BIT(0);
++    } else {
++        reg |= BIT(0);
++    }
++    dct_sdhci_cdns_hrs_write(plat, reg, SDHCI_CDNS_HRS09);
++    if (assert) {
++        assert = BIT(1);
++    }
++    timeout = 100;
++    reg = dct_sdhci_cdns_hrs_read(plat, SDHCI_CDNS_HRS09) & BIT(1);
++    while (timeout-- && (reg == assert)) {
++        udelay(1000);
++        reg = dct_sdhci_cdns_hrs_read(plat, SDHCI_CDNS_HRS09) & BIT(1);
++    }
++    if (reg == assert) {
++        dev_err(mmc_dev(mmc), "timeout waiting for phy init complete\n");
++    }
++}
++
++static int dct_sdhci_cdns_phy_init(struct dct_sdhci_cdns_plat *plat,
++				const void *fdt, int nodeoffset)
++{
++#if 0
++	const fdt32_t *prop;
++	int ret, i;
++	for (i = 0; i < ARRAY_SIZE(dct_sdhci_cdns_phy_cfgs); i++) {
++		prop = fdt_getprop(fdt, nodeoffset,
++				   dct_sdhci_cdns_phy_cfgs[i].property, NULL);
++		if (!prop)
++			continue;
++
++		ret = dct_sdhci_cdns_write_phy_reg(plat,
++					       dct_sdhci_cdns_phy_cfgs[i].addr,
++					       fdt32_to_cpu(*prop));
++		if (ret)
++			return ret;
++	}
++#endif
++    dct_sdhci_cdns_phy_reset(plat, true);
++
++    dct_sdhci_cdns_write_phy_reg(plat, 0x2004, 0x00780000);
++    dct_sdhci_cdns_write_phy_reg(plat, 0x2008, 0x80a40040);
++    dct_sdhci_cdns_write_phy_reg(plat, 0x200c, 0x00a00004);
++    dct_sdhci_cdns_write_phy_reg(plat, 0x2010, 0x00000000);
++    dct_sdhci_cdns_write_phy_reg(plat, 0x2080, 0x00000000);
++
++    dct_sdhci_cdns_phy_reset(plat, false);
++
++    dct_sdhci_cdns_write_phy_reg(plat, 0x2000, 0x18000001);
++
++    dct_sdhci_cdns_hrs_write(plat, 0xf1c1800f, SDHCI_CDNS_HRS09);
++    dct_sdhci_cdns_hrs_write(plat, 0x00020000, SDHCI_CDNS_HRS10);
++    dct_sdhci_cdns_hrs_write(plat, 0x00000101, SDHCI_CDNS_HRS16);
++    dct_sdhci_cdns_hrs_write(plat, 0x00090000, SDHCI_CDNS_HRS07);
++
++	return 0;
++}
++
++static void dct_sdhci_cdns_set_control_reg(struct sdhci_host *host)
++{
++	struct mmc *mmc = host->mmc;
++	struct dct_sdhci_cdns_plat *plat = dev_get_plat(mmc->dev);
++	unsigned int clock = mmc->clock;
++	u32 mode, tmp;
++
++	/*
++	 * REVISIT:
++	 * The mode should be decided by MMC_TIMING_* like Linux, but
++	 * U-Boot does not support timing.  Use the clock frequency instead.
++	 */
++	if (clock <= 26000000) {
++		mode = SDHCI_CDNS_HRS06_MODE_SD; /* use this for Legacy */
++	} else if (clock <= 52000000) {
++		if (mmc->ddr_mode)
++			mode = SDHCI_CDNS_HRS06_MODE_MMC_DDR;
++		else
++			mode = SDHCI_CDNS_HRS06_MODE_MMC_SDR;
++	} else {
++		if (mmc->ddr_mode)
++			mode = SDHCI_CDNS_HRS06_MODE_MMC_HS400;
++		else
++			mode = SDHCI_CDNS_HRS06_MODE_MMC_HS200;
++	}
++
++	tmp = readl(plat->hrs_addr + SDHCI_CDNS_HRS06);
++	tmp &= ~SDHCI_CDNS_HRS06_MODE;
++	tmp |= FIELD_PREP(SDHCI_CDNS_HRS06_MODE, mode);
++	writel(tmp, plat->hrs_addr + SDHCI_CDNS_HRS06);
++}
++
++static void dct_sdhci_cdns_set_clock(struct sdhci_host *host, unsigned int div)
++{
++	struct mmc *mmc = host->mmc;
++    struct dct_sdhci_cdns_plat *plat = dev_get_plat(mmc->dev);
++    u32 clk = mmc->clock;
++    u32 value;
++
++    value = dct_sdhci_cdns_hrs_read(plat, SDHCI_CDNS_HRS09);
++    if (clk > 0) {
++        value |= BIT(3);
++    } else {
++        value &= ~BIT(3);
++    }
++    value |= 0x00018000;
++    dct_sdhci_cdns_hrs_write(plat, value, SDHCI_CDNS_HRS09);
++
++    dct_sdhci_cdns_phy_reset(plat, true);
++
++    dct_sdhci_cdns_write_phy_reg(plat, 0x2004, 0x00780000);
++    dct_sdhci_cdns_write_phy_reg(plat, 0x2008, 0x80a40040);
++    dct_sdhci_cdns_write_phy_reg(plat, 0x200c, 0x00a00004);
++    dct_sdhci_cdns_write_phy_reg(plat, 0x2010, 0x00000000);
++    dct_sdhci_cdns_phy_reset(plat, false);
++
++    dct_sdhci_cdns_write_phy_reg(plat, 0x2000, 0x18000001);
++
++    value = dct_sdhci_cdns_hrs_read(plat, SDHCI_CDNS_HRS09);
++    value |= 0x00018004;
++    if (clk > 0) {
++        value |= BIT(3);
++    }
++    dct_sdhci_cdns_hrs_write(plat, 0xf1c1800f, SDHCI_CDNS_HRS09);
++
++    if (host->mmc->selected_mode == MMC_LEGACY) {
++        dct_sdhci_cdns_hrs_write(plat, 0x00020000, SDHCI_CDNS_HRS10);
++        dct_sdhci_cdns_hrs_write(plat, 0x00000101, SDHCI_CDNS_HRS16);
++        dct_sdhci_cdns_hrs_write(plat, 0x00090000, SDHCI_CDNS_HRS07);
++    } else {
++        dct_sdhci_cdns_hrs_write(plat, 0x00030000, SDHCI_CDNS_HRS10);
++        dct_sdhci_cdns_hrs_write(plat, 0x00000000, SDHCI_CDNS_HRS16);
++        dct_sdhci_cdns_hrs_write(plat, 0x00080000, SDHCI_CDNS_HRS07);
++    }
++}
++
++static const struct sdhci_ops dct_sdhci_cdns_ops = {
++	.set_clock = dct_sdhci_cdns_set_clock,
++	.set_control_reg = dct_sdhci_cdns_set_control_reg,
++};
++
++static int dct_sdhci_cdns_set_tune_val(struct dct_sdhci_cdns_plat *plat,
++				   unsigned int val)
++{
++	void __iomem *reg = plat->hrs_addr + SDHCI_CDNS_HRS06;
++	u32 tmp;
++	int i, ret;
++
++	if (WARN_ON(!FIELD_FIT(SDHCI_CDNS_HRS06_TUNE, val)))
++		return -EINVAL;
++
++	tmp = readl(reg);
++	tmp &= ~SDHCI_CDNS_HRS06_TUNE;
++	tmp |= FIELD_PREP(SDHCI_CDNS_HRS06_TUNE, val);
++
++	/*
++	 * Workaround for IP errata:
++	 * The IP6116 SD/eMMC PHY design has a timing issue on receive data
++	 * path. Send tune request twice.
++	 */
++	for (i = 0; i < 2; i++) {
++		tmp |= SDHCI_CDNS_HRS06_TUNE_UP;
++		writel(tmp, reg);
++
++		ret = readl_poll_timeout(reg, tmp,
++					 !(tmp & SDHCI_CDNS_HRS06_TUNE_UP), 1);
++		if (ret)
++			return ret;
++	}
++
++	return 0;
++}
++
++static int __maybe_unused dct_sdhci_cdns_execute_tuning(struct udevice *dev,
++						    unsigned int opcode)
++{
++	struct dct_sdhci_cdns_plat *plat = dev_get_plat(dev);
++	struct mmc *mmc = &plat->mmc;
++	int cur_streak = 0;
++	int max_streak = 0;
++	int end_of_streak = 0;
++	int i;
++
++	/*
++	 * This handler only implements the eMMC tuning that is specific to
++	 * this controller.  The tuning for SD timing should be handled by the
++	 * SDHCI core.
++	 */
++	if (!IS_MMC(mmc))
++		return -ENOTSUPP;
++
++	if (WARN_ON(opcode != MMC_CMD_SEND_TUNING_BLOCK_HS200))
++		return -EINVAL;
++
++	for (i = 0; i < SDHCI_CDNS_MAX_TUNING_LOOP; i++) {
++		if (dct_sdhci_cdns_set_tune_val(plat, i) ||
++		    mmc_send_tuning(mmc, opcode, NULL)) { /* bad */
++			cur_streak = 0;
++		} else { /* good */
++			cur_streak++;
++			if (cur_streak > max_streak) {
++				max_streak = cur_streak;
++				end_of_streak = i;
++			}
++		}
++	}
++
++	if (!max_streak) {
++		dev_err(dev, "no tuning point found\n");
++		return -EIO;
++	}
++
++	return dct_sdhci_cdns_set_tune_val(plat, end_of_streak - max_streak / 2);
++}
++
++static struct dm_mmc_ops dct_sdhci_cdns_mmc_ops;
++
++static int dct_sdhci_cdns_bind(struct udevice *dev)
++{
++	struct dct_sdhci_cdns_plat *plat = dev_get_plat(dev);
++
++	return sdhci_bind(dev, &plat->mmc, &plat->cfg);
++}
++
++static int dct_sdhci_cdns_probe(struct udevice *dev)
++{
++	DECLARE_GLOBAL_DATA_PTR;
++	struct mmc_uclass_priv *upriv = dev_get_uclass_priv(dev);
++	struct dct_sdhci_cdns_plat *plat = dev_get_plat(dev);
++	struct sdhci_host *host = dev_get_priv(dev);
++	fdt_addr_t base;
++	int ret;
++
++	base = dev_read_addr(dev);
++	if (base == FDT_ADDR_T_NONE)
++		return -EINVAL;
++
++	plat->hrs_addr = devm_ioremap(dev, base, SZ_1K);
++	if (!plat->hrs_addr)
++		return -ENOMEM;
++
++	host->name = dev->name;
++	host->ioaddr = plat->hrs_addr + SDHCI_CDNS_SRS_BASE;
++	host->ops = &dct_sdhci_cdns_ops;
++	host->quirks |= SDHCI_QUIRK_WAIT_SEND_CMD;
++	dct_sdhci_cdns_mmc_ops = sdhci_ops;
++#ifdef MMC_SUPPORTS_TUNING
++	dct_sdhci_cdns_mmc_ops.execute_tuning = dct_sdhci_cdns_execute_tuning;
++#endif
++
++	ret = mmc_of_parse(dev, &plat->cfg);
++	if (ret)
++		return ret;
++
++	ret = dct_sdhci_cdns_phy_init(plat, gd->fdt_blob, dev_of_offset(dev));
++	if (ret)
++		return ret;
++
++	host->mmc = &plat->mmc;
++	host->mmc->dev = dev;
++	ret = sdhci_setup_cfg(&plat->cfg, host, 0, 0);
++	if (ret)
++		return ret;
++
++	upriv->mmc = &plat->mmc;
++	host->mmc->priv = host;
++
++	return sdhci_probe(dev);
++}
++
++static const struct udevice_id dct_sdhci_cdns_match[] = {
++	{ .compatible = "dct,dct_sdhc_cadence" },
++	{ /* sentinel */ }
++};
++
++U_BOOT_DRIVER(dct_sdhci_cdns) = {
++	.name = "dct-sdhci-cdns",
++	.id = UCLASS_MMC,
++	.of_match = dct_sdhci_cdns_match,
++	.bind = dct_sdhci_cdns_bind,
++	.probe = dct_sdhci_cdns_probe,
++	.priv_auto	= sizeof(struct sdhci_host),
++	.plat_auto	= sizeof(struct dct_sdhci_cdns_plat),
++	.ops = &dct_sdhci_cdns_mmc_ops,
++};
+-- 
+2.34.1
+

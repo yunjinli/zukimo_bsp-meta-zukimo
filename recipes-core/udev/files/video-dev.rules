@@ -1,0 +1,30 @@
+SUBSYSTEM=="video4linux" RUN+="/bin/mkdir /dev/video", ATTRS{name}=="isp_pre:capture", KERNEL=="video10", SYMLINK+="video/vi0"
+SUBSYSTEM=="video4linux" RUN+="/bin/mkdir /dev/video", ATTRS{name}=="isp_pre:capture", KERNEL=="video11", SYMLINK+="video/vi1"
+SUBSYSTEM=="video4linux" RUN+="/bin/mkdir /dev/video", ATTRS{name}=="isp_pre:capture", KERNEL=="video12", SYMLINK+="video/vi2"
+SUBSYSTEM=="video4linux" RUN+="/bin/mkdir /dev/video", ATTRS{name}=="isp_pre:capture", KERNEL=="video13", SYMLINK+="video/vi3"
+
+SUBSYSTEM=="video4linux" RUN+="/bin/mkdir /dev/video", ATTRS{name}=="isp_main:output",  KERNEL=="video20", SYMLINK+="video/isp0-in"
+SUBSYSTEM=="video4linux" RUN+="/bin/mkdir /dev/video", ATTRS{name}=="isp_main:capture", KERNEL=="video21", SYMLINK+="video/isp0-hv"
+SUBSYSTEM=="video4linux" RUN+="/bin/mkdir /dev/video", ATTRS{name}=="isp_main:capture", KERNEL=="video22", SYMLINK+="video/isp0-mv"
+SUBSYSTEM=="video4linux" RUN+="/bin/mkdir /dev/video", ATTRS{name}=="isp_main:capture", KERNEL=="video23", SYMLINK+="video/isp0-dpc"
+SUBSYSTEM=="video4linux" RUN+="/bin/mkdir /dev/video", ATTRS{name}=="isp_main:capture", KERNEL=="video24", SYMLINK+="video/isp0-hist"
+
+SUBSYSTEM=="video4linux" RUN+="/bin/mkdir /dev/video", ATTRS{name}=="isp_main:output",  KERNEL=="video25", SYMLINK+="video/isp1-in"
+SUBSYSTEM=="video4linux" RUN+="/bin/mkdir /dev/video", ATTRS{name}=="isp_main:capture", KERNEL=="video26", SYMLINK+="video/isp1-hv"
+SUBSYSTEM=="video4linux" RUN+="/bin/mkdir /dev/video", ATTRS{name}=="isp_main:capture", KERNEL=="video27", SYMLINK+="video/isp1-mv"
+SUBSYSTEM=="video4linux" RUN+="/bin/mkdir /dev/video", ATTRS{name}=="isp_main:capture", KERNEL=="video28", SYMLINK+="video/isp1-dpc"
+SUBSYSTEM=="video4linux" RUN+="/bin/mkdir /dev/video", ATTRS{name}=="isp_main:capture", KERNEL=="video29", SYMLINK+="video/isp1-hist"
+
+SUBSYSTEM=="video4linux" RUN+="/bin/mkdir /dev/video", ATTRS{name}=="imx390 1-0021", SYMLINK+="video/sensor0"
+SUBSYSTEM=="video4linux" RUN+="/bin/mkdir /dev/video", ATTRS{name}=="imx390 2-0021", SYMLINK+="video/sensor1"
+SUBSYSTEM=="video4linux" RUN+="/bin/mkdir /dev/video", ATTRS{name}=="imx390 3-0021", SYMLINK+="video/sensor2"
+SUBSYSTEM=="video4linux" RUN+="/bin/mkdir /dev/video", ATTRS{name}=="imx390 4-0021", SYMLINK+="video/sensor3"
+
+SUBSYSTEM=="video4linux" RUN+="/bin/mkdir /dev/video", ATTR{name}=="isp-main-subdev", KERNELS=="26000000.isp_main", SYMLINK+="video/isp0"
+SUBSYSTEM=="video4linux" RUN+="/bin/mkdir /dev/video", ATTR{name}=="isp-main-subdev", KERNELS=="26080000.isp_main", SYMLINK+="video/isp1"
+
+SUBSYSTEM=="video4linux" RUN+="/bin/mkdir /dev/video", ATTR{index}=="0", KERNELS=="28000000.dct-mvdu", SYMLINK+="video/mvdu0"
+SUBSYSTEM=="video4linux" RUN+="/bin/mkdir /dev/video", ATTR{index}=="1", KERNELS=="28000000.dct-mvdu", SYMLINK+="video/mvdu1"
+SUBSYSTEM=="video4linux" RUN+="/bin/mkdir /dev/video", ATTR{index}=="2", KERNELS=="28000000.dct-mvdu", SYMLINK+="video/mvdu2"
+
+SUBSYSTEM=="video4linux" RUN+="/bin/mkdir /dev/video", ATTR{index}=="0", ATTRS{name}=="nna", SYMLINK+="video/nna"

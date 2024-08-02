@@ -1,0 +1,11 @@
+[Unit]
+Description=Autostart of video test pipeline
+After=systemd-logind.service video_config
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/home/root/test_video_pipeline.sh
+
+[Install]
+WantedBy=multi-user.target

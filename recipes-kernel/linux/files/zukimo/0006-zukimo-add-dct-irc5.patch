@@ -1,0 +1,27 @@
+From 8af35dd51c2cf094fdddeaadd42dd9fcac48f025 Mon Sep 17 00:00:00 2001
+From: Klaus Kaiser <klaus.kaiser@dreamchip.de>
+Date: Tue, 12 Dec 2023 10:33:29 +0100
+Subject: [PATCH 06/34] zukimo add dct irc5
+
+Upstream-Status: Pending
+---
+ kernel/irq/Kconfig | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/kernel/irq/Kconfig b/kernel/irq/Kconfig
+index db3d174c53d4..c0133587e28f 100644
+--- a/kernel/irq/Kconfig
++++ b/kernel/irq/Kconfig
+@@ -150,3 +150,9 @@ config DEPRECATED_IRQ_CPU_ONOFFLINE
+ 	bool
+ 	depends on CAVIUM_OCTEON_SOC
+ 	default CAVIUM_OCTEON_SOC
++
++config GENERIC_IRQCHIP_MODULES
++	bool "Support loadable modules based on the generic IRQ chip driver"
++	select GENERIC_IRQ_CHIP
++	help
++	  Include generic IRQ chip driver so that loadable modules can use it.
+-- 
+2.34.1
+

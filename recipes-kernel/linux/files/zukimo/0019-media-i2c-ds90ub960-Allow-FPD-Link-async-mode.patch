@@ -1,0 +1,33 @@
+From e344e89f1dc12ee01c68ed183e25a880868a13bd Mon Sep 17 00:00:00 2001
+From: Tomi Valkeinen <tomi.valkeinen@ideasonboard.com>
+Date: Mon, 31 Jul 2023 16:24:40 +0300
+Subject: [PATCH 19/34] media: i2c: ds90ub960: Allow FPD-Link async mode
+
+Upstream-Status: Pending
+
+Allow using FPD-Link in async mode. The driver handles it correctly, but
+the mode was blocked at probe time as there wasn't HW to test this with.
+Now the mode has been tested, and it works.
+
+Signed-off-by: Tomi Valkeinen <tomi.valkeinen@ideasonboard.com>
+Reviewed-by: Andy Shevchenko <andriy.shevchenko@linux.intel.com>
+Reviewed-by: Laurent Pinchart <laurent.pinchart@ideasonboard.com>
+---
+ drivers/media/i2c/ds90ub960.c | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/drivers/media/i2c/ds90ub960.c b/drivers/media/i2c/ds90ub960.c
+index 47097e2318b2..25a7e61fc53c 100644
+--- a/drivers/media/i2c/ds90ub960.c
++++ b/drivers/media/i2c/ds90ub960.c
+@@ -3241,7 +3241,6 @@ ub960_parse_dt_rxport_link_properties(struct ub960_data *priv,
+ 	switch (rx_mode) {
+ 	case RXPORT_MODE_RAW12_HF:
+ 	case RXPORT_MODE_RAW12_LF:
+-	case RXPORT_MODE_CSI2_ASYNC:
+ 		dev_err(dev, "rx%u: unsupported 'ti,rx-mode' %u\n", nport,
+ 			rx_mode);
+ 		return -EINVAL;
+-- 
+2.34.1
+

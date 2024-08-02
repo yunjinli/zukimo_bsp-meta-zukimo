@@ -1,0 +1,1 @@
+TEMPLATECONF=${TEMPLATECONF:-meta-zukimo/conf/templates/$DISTRO}

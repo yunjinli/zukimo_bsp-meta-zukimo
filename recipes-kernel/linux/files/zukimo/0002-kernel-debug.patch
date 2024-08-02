@@ -1,0 +1,25 @@
+From e4a3fa4e85274e2e55b86de5b8d25589fd1a031b Mon Sep 17 00:00:00 2001
+From: Ralph Hempel <ralph.hempel@dreamchip.de>
+Date: Thu, 15 Jun 2023 11:03:31 +0200
+Subject: [PATCH 02/34] kernel debug
+
+Upstream-Status: Pending
+---
+ arch/arm64/kernel/smp.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/arch/arm64/kernel/smp.c b/arch/arm64/kernel/smp.c
+index d323621d14a5..4f7a9fbd5e98 100644
+--- a/arch/arm64/kernel/smp.c
++++ b/arch/arm64/kernel/smp.c
+@@ -200,6 +200,7 @@ asmlinkage notrace void secondary_start_kernel(void)
+ 	const struct cpu_operations *ops;
+ 	unsigned int cpu = smp_processor_id();
+ 
++    pr_err("SST: %s:%d\n", __PRETTY_FUNCTION__, __LINE__);
+ 	/*
+ 	 * All kernel threads share the same mm context; grab a
+ 	 * reference and switch to it.
+-- 
+2.34.1
+

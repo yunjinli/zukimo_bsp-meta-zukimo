@@ -1,0 +1,13 @@
+[Unit]
+Description=Synchronize system clock or PTP hardware clock (PHC)
+Requires=ptp4l.service
+After=ptp4l.service
+
+[Service]
+Type=simple
+# normally phc is set in TAI which is UTC + 37sec but as we synced them initially we give an offset of 0
+ExecStart=/usr/sbin/phc2sys -s eth0 -c CLOCK_REALTIME --step_threshold=1 --transportSpecific=1 -w -O 0
+Restart=always
+
+[Install]
+WantedBy=multi-user.target

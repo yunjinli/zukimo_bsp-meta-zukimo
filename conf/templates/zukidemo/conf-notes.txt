@@ -1,0 +1,30 @@
+Welcome to the DCT yocto build system for the zukimo project.
+
+Implemented machine types 
+--------------------------
+- zukimo        Zukimo development board
+
+Common targets
+--------------
+    zukimo-image-base  - bootable image (no demo apps, no graphics)
+
+
+    To build the SDK:
+    - bitbake zukimo-image-base -c populate_sdk
+
+    Common bitbake commands:
+    bitbake <image_name> -c populate_sdk
+    bitbake <image_name> -c do_compile
+    bitbake <image_name> -c do_install
+    bitbake <image_name> -c clean
+    bitbake <image_name> -c cleansstate
+
+Make targets
+------------
+For convenience several `make` target have been implemented.
+To see a list of make targets enter:
+    make help
+
+To update everything enter:
+    make build images tftp nfs
+

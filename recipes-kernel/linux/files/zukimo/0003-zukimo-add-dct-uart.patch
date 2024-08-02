@@ -1,0 +1,958 @@
+From 422d18423c772e84fd4f939114278486f679c69a Mon Sep 17 00:00:00 2001
+From: Ralph Hempel <ralph.hempel@dreamchip.de>
+Date: Thu, 15 Jun 2023 11:03:31 +0200
+Subject: [PATCH 03/34] zukimo: add dct uart
+
+Upstream-Status: Pending
+---
+ drivers/tty/serial/Kconfig       |  19 +
+ drivers/tty/serial/Makefile      |   1 +
+ drivers/tty/serial/dct_uart.c    | 881 +++++++++++++++++++++++++++++++
+ include/uapi/linux/serial_core.h |   3 +
+ 4 files changed, 904 insertions(+)
+ create mode 100644 drivers/tty/serial/dct_uart.c
+
+diff --git a/drivers/tty/serial/Kconfig b/drivers/tty/serial/Kconfig
+index 12f685168aef..ee8bd41f84d9 100644
+--- a/drivers/tty/serial/Kconfig
++++ b/drivers/tty/serial/Kconfig
+@@ -85,6 +85,25 @@ config SERIAL_EARLYCON_ARM_SEMIHOST
+ 	  with "earlycon=smh" on the kernel command line. The console is
+ 	  enabled when early_param is processed.
+ 
++config SERIAL_DCT
++	tristate "DCT serial port support"
++	select SERIAL_CORE
++	help
++	  This enables the driver for on-chip DCT UARTs
++
++	  If unsure, say N.
++
++config SERIAL_DCT_CONSOLE
++	bool "Support for console on DCT UARTs"
++	depends on SERIAL_DCT=y
++	select SERIAL_CORE_CONSOLE
++	select SERIAL_EARLYCON
++	help
++	  Say Y here if you wish to use a DCT UART as the
++	  system console (the system console is the device which
++	  receives all kernel messages and warnings and which allows
++	  logins in single user mode) as /dev/ttyDCTx.
++
+ config SERIAL_EARLYCON_RISCV_SBI
+ 	bool "Early console using RISC-V SBI"
+ 	depends on RISCV_SBI_V01
+diff --git a/drivers/tty/serial/Makefile b/drivers/tty/serial/Makefile
+index 238a9557b487..9f6b57b5dfc2 100644
+--- a/drivers/tty/serial/Makefile
++++ b/drivers/tty/serial/Makefile
+@@ -25,6 +25,7 @@ obj-$(CONFIG_SERIAL_8250) += 8250/
+ 
+ obj-$(CONFIG_SERIAL_AMBA_PL010) += amba-pl010.o
+ obj-$(CONFIG_SERIAL_AMBA_PL011) += amba-pl011.o
++obj-$(CONFIG_SERIAL_DCT) += dct_uart.o
+ obj-$(CONFIG_SERIAL_CLPS711X) += clps711x.o
+ obj-$(CONFIG_SERIAL_PXA_NON8250) += pxa.o
+ obj-$(CONFIG_SERIAL_SA1100) += sa1100.o
+diff --git a/drivers/tty/serial/dct_uart.c b/drivers/tty/serial/dct_uart.c
+new file mode 100644
+index 000000000000..b46659a11a26
+--- /dev/null
++++ b/drivers/tty/serial/dct_uart.c
+@@ -0,0 +1,881 @@
++/*
++ * dct_uart.c, by Dream Chip
++ *
++ * Copyright (C) 2016-2023 Ralph Hempel <ralph.hempel@dreamchip.de>
++ *
++ * Based on meson_uart.c, by AMLOGIC, INC.
++ * Copyright (C) 2014 Carlo Caione <carlo@caione.org>
++ *
++ * This program is free software; you can redistribute it and/or modify it
++ * under the terms of the GNU General Public License version 2 as published
++ * by the Free Software Foundation.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ */
++
++#include <linux/clk.h>
++#include <linux/console.h>
++#include <linux/delay.h>
++#include <linux/init.h>
++#include <linux/io.h>
++#include <linux/module.h>
++#include <linux/kernel.h>
++#include <linux/of.h>
++#include <linux/platform_device.h>
++#include <linux/serial.h>
++#include <linux/serial_core.h>
++#include <linux/tty.h>
++#include <linux/tty_flip.h>
++#include <linux/pm_runtime.h>
++
++/* Register offsets */
++#define DCT_UART_DATA 0x00
++#define DCT_UART_BYTE_CNT 0x04
++#define DCT_UART_IRQ_LEVEL 0x08
++#define DCT_UART_CMD 0x0c
++#define DCT_UART_CTRL 0x10
++#define DCT_UART_MSR 0x14
++#define DCT_UART_MCR 0x18
++#define DCT_UART_IMR 0x20
++#define DCT_UART_RIS 0x24
++#define DCT_UART_MIS 0x28
++#define DCT_UART_ICR 0x2C
++#define DCT_UART_ISR 0x30
++
++/* DCT_UART_BYTE_CNT - byte count */
++#define TX_FREE_SIZE 0x00ff
++#define RX_BYTE_COUNT 0xff00
++#define TX_SIZE 16
++
++/* DCT_UART_CTRL - control */
++
++/* Enable module after reset to start processing. */
++#define ENABLE_MODULE BIT(3)
++/* If set to 1, all internal registers and the buffers are reset.
++ * The configuration registers keep the previous value.
++ */
++#define RESET_MODULE BIT(2)
++/* If set to 1, the transmit buffer UART_TX_BUFF is reset. */
++#define FLUSH_TX_BUF BIT(1)
++/* If set to 1, the receive buffer UART_RX_BUFF is reset. */
++#define FLUSH_RX_BUF BIT(0)
++
++/* DCT_UART_IMR - interrupt mask register */
++
++/* receive buffer overflow interrupt. */
++#define IMR_PARITY_ERROR BIT(5)
++/* receive buffer overflow interrupt. */
++#define IMR_RX_BUF_OVFLW BIT(4)
++/* receive buffer underflow interrupt. */
++#define IMR_RX_BUF_UNFLW BIT(3)
++/* RECEIVE interrupt. */
++#define IMR_RX_IRQ BIT(2)
++/* transmit buffer overflow interrupt. */
++#define IMR_TX_BUF_OVFLW BIT(1)
++/* TRANSMIT interrupt. */
++#define IMR_TX_IRQ BIT(0)
++
++/* DCT_UART_RIS - raw interrupt status register */
++
++/* receive buffer overflow interrupt. */
++#define RIS_PARITY_ERROR BIT(5)
++/* receive buffer overflow interrupt. */
++#define RIS_RX_BUF_OVFLW BIT(4)
++/* receive buffer underflow interrupt. */
++#define RIS_RX_BUF_UNFLW BIT(3)
++/* RECEIVE interrupt. */
++#define RIS_RX_IRQ BIT(2)
++/* transmit buffer overflow interrupt. */
++#define RIS_TX_BUF_OVFLW BIT(1)
++/* TRANSMIT interrupt. */
++#define RIS_TX_IRQ BIT(0)
++
++/* DCT_UART_ICR - interrupt clear register */
++
++/* Clear for the receive buffer overflow interrupt. */
++#define ICR_PARITY_ERROR BIT(5)
++/* Clear for the receive buffer overflow interrupt. */
++#define ICR_RX_BUF_OVFLW BIT(4)
++/* Clear for the receive buffer underflow interrupt. */
++#define ICR_RX_BUF_UNFLW BIT(3)
++/* Clear for the RECEIVE interrupt. */
++#define ICR_RX_IRQ BIT(2)
++/* Clear for the transmit buffer overflow interrupt. */
++#define ICR_TX_BUF_OVFLW BIT(1)
++/* Clear for the TRANSMIT interrupt. */
++#define ICR_TX_IRQ BIT(0)
++
++#define DCT_UART_ERR                                              \
++	(RIS_PARITY_ERROR | RIS_RX_BUF_OVFLW | RIS_RX_BUF_UNFLW | \
++	 RIS_TX_BUF_OVFLW)
++#define DCT_UART_CLEAR_ERR                                        \
++	(RIS_PARITY_ERROR | RIS_RX_BUF_OVFLW | RIS_RX_BUF_UNFLW | \
++	 RIS_TX_BUF_OVFLW)
++
++#define DCT_UART_8BIT (0x03 << 6)
++#define DCT_UART_7BIT (0x02 << 6)
++#define DCT_UART_6BIT (0x01 << 6)
++#define DCT_UART_5BIT (0x00 << 6)
++
++#define DCT_UART_PAR_EVEN BIT(3)
++#define DCT_UART_PAR_EN BIT(4)
++#define DCT_UART_STOP_BITS BIT(5)
++
++#define DCT_UART_PORT_NUM 2
++#define DCT_UART_DEV_NAME "ttyDCT"
++
++#define UART_AUTOSUSPEND_TIMEOUT 3000 /* ms */
++
++static struct uart_driver dct_uart_driver;
++
++static struct uart_port *dct_ports[DCT_UART_PORT_NUM];
++
++struct dctuart_data {
++	struct clk *clk;
++};
++
++static void dct_uart_set_mctrl(struct uart_port *port, unsigned int mctrl)
++{
++}
++
++static unsigned int dct_uart_get_mctrl(struct uart_port *port)
++{
++	return TIOCM_CTS;
++}
++
++static unsigned int dct_uart_tx_empty(struct uart_port *port)
++{
++	u32 val;
++	unsigned long flags;
++
++	spin_lock_irqsave(&port->lock, flags);
++	val = readl(port->membase + DCT_UART_BYTE_CNT);
++	spin_unlock_irqrestore(&port->lock, flags);
++
++	return ((val & TX_FREE_SIZE) == TX_SIZE) ? TIOCSER_TEMT : 0;
++}
++
++static void dct_uart_stop_tx(struct uart_port *port)
++{
++	u32 val;
++
++	val = readl(port->membase + DCT_UART_CTRL);
++	val |= FLUSH_TX_BUF;
++	writel(val, port->membase + DCT_UART_CTRL);
++}
++
++static void dct_uart_stop_rx(struct uart_port *port)
++{
++	u32 val;
++
++	val = readl(port->membase + DCT_UART_CTRL);
++	val |= FLUSH_RX_BUF;
++	writel(val, port->membase + DCT_UART_CTRL);
++}
++
++static void dct_uart_shutdown(struct uart_port *port)
++{
++	struct dctuart_data *pdata = port->private_data;
++	unsigned long flags;
++	u32 val;
++
++	free_irq(port->irq, port);
++
++	spin_lock_irqsave(&port->lock, flags);
++
++	val = readl(port->membase + DCT_UART_IMR);
++	val &= ~(IMR_RX_IRQ | IMR_RX_IRQ);
++	writel(val, port->membase + DCT_UART_IMR);
++
++	val = readl(port->membase + DCT_UART_CTRL);
++	val |= (FLUSH_RX_BUF | FLUSH_TX_BUF);
++	writel(val, port->membase + DCT_UART_CTRL);
++
++	spin_unlock_irqrestore(&port->lock, flags);
++
++	clk_disable(pdata->clk);
++}
++
++static void dct_uart_start_tx(struct uart_port *port)
++{
++	struct circ_buf *xmit = &port->state->xmit;
++	unsigned int ch;
++
++	if (uart_tx_stopped(port)) {
++		dct_uart_stop_tx(port);
++		return;
++	}
++
++	while (readl(port->membase + DCT_UART_BYTE_CNT) & TX_FREE_SIZE) {
++		if (port->x_char) {
++			writel(port->x_char, port->membase + DCT_UART_DATA);
++			port->icount.tx++;
++			port->x_char = 0;
++			continue;
++		}
++
++		if (uart_circ_empty(xmit))
++			break;
++
++		ch = xmit->buf[xmit->tail];
++		writel(ch, port->membase + DCT_UART_DATA);
++		xmit->tail = (xmit->tail + 1) & (UART_XMIT_SIZE - 1);
++		port->icount.tx++;
++	}
++
++	if (uart_circ_chars_pending(xmit) < WAKEUP_CHARS)
++		uart_write_wakeup(port);
++}
++
++static void dct_receive_chars(struct uart_port *port)
++{
++	struct tty_port *tport = &port->state->port;
++	char flag;
++	u32 status, ch, mode;
++
++	do {
++		flag = TTY_NORMAL;
++		port->icount.rx++;
++		status = readl(port->membase + DCT_UART_RIS);
++
++		if (status & DCT_UART_ERR) {
++			if (status & RIS_TX_BUF_OVFLW)
++				port->icount.overrun++;
++			else if (status & RIS_PARITY_ERROR)
++				port->icount.frame++;
++
++			mode = readl(port->membase + DCT_UART_ICR);
++			mode |= DCT_UART_CLEAR_ERR;
++			writel(mode, port->membase + DCT_UART_ICR);
++
++			/* It doesn't clear to 0 automatically */
++			mode &= ~DCT_UART_CLEAR_ERR;
++			writel(mode, port->membase + DCT_UART_ICR);
++
++			status &= port->read_status_mask;
++			if (status & RIS_PARITY_ERROR)
++				flag = TTY_PARITY;
++		}
++
++		ch = readl(port->membase + DCT_UART_DATA);
++		ch &= 0xff;
++
++		if ((status & port->ignore_status_mask) == 0)
++			tty_insert_flip_char(tport, ch, flag);
++
++		if (status & RIS_TX_BUF_OVFLW)
++			tty_insert_flip_char(tport, 0, TTY_OVERRUN);
++
++	} while (readl(port->membase + DCT_UART_BYTE_CNT) & RX_BYTE_COUNT);
++}
++
++static irqreturn_t dct_uart_interrupt(int irq, void *dev_id)
++{
++	struct uart_port *port = (struct uart_port *)dev_id;
++	u32 status;
++	unsigned long flags;
++	int data_received = 0;
++
++	spin_lock_irqsave(&port->lock, flags);
++
++	status = readl(port->membase + DCT_UART_RIS);
++
++	if (readl(port->membase + DCT_UART_BYTE_CNT) & RX_BYTE_COUNT) {
++		dct_receive_chars(port);
++		data_received = 1;
++	}
++
++	if (readl(port->membase + DCT_UART_BYTE_CNT) & TX_FREE_SIZE)
++		dct_uart_start_tx(port);
++
++	writel(status, port->membase + DCT_UART_ICR);
++
++	spin_unlock_irqrestore(&port->lock, flags);
++
++	if (data_received)
++		tty_flip_buffer_push(&port->state->port);
++
++	return IRQ_HANDLED;
++}
++
++static const char *dct_uart_type(struct uart_port *port)
++{
++	return (port->type == PORT_DCT) ? "dct_uart" : NULL;
++}
++
++static int dct_uart_startup(struct uart_port *port)
++{
++	struct dctuart_data *pdata = port->private_data;
++	u32 val;
++	int ret = 0;
++
++	ret = clk_enable(pdata->clk);
++	if (ret) {
++		dev_err(port->dev, "Failed to enable clock\n");
++		return ret;
++	}
++
++	ret = request_irq(port->irq, dct_uart_interrupt, 0, dct_uart_type(port),
++			  port);
++
++	if (ret)
++		return ret;
++
++	writel(RESET_MODULE, port->membase + DCT_UART_CMD);
++
++	writel(ENABLE_MODULE, port->membase + DCT_UART_CMD);
++
++	val = (IMR_RX_IRQ | IMR_TX_IRQ);
++	writel(val, port->membase + DCT_UART_IMR);
++
++	// trigger software interrupt to make sure all fifo characters
++	// that were received / prepared for tx get processed
++	writel(val, port->membase + DCT_UART_ISR);
++
++	return ret;
++}
++
++static void dct_uart_change_speed(struct uart_port *port, unsigned long baud)
++{
++	u32 val;
++
++	while ((readl(port->membase + DCT_UART_BYTE_CNT) & TX_FREE_SIZE) !=
++	       TX_SIZE)
++		cpu_relax();
++
++	val = readl(port->membase + DCT_UART_CTRL);
++	val &= 0xffff;
++	val |= (((port->uartclk + (baud * 8)) / (baud * 16)) << 16);
++	writel(val, port->membase + DCT_UART_CTRL);
++}
++
++static void dct_uart_set_termios(struct uart_port *port,
++				 struct ktermios *termios,
++				 const struct ktermios *old)
++{
++	unsigned int cflags, iflags, baud;
++	unsigned long flags;
++	u32 val;
++
++	spin_lock_irqsave(&port->lock, flags);
++
++	cflags = termios->c_cflag;
++	iflags = termios->c_iflag;
++
++	val = readl(port->membase + DCT_UART_CTRL);
++
++	val &= ~0xffff;
++	switch (cflags & CSIZE) {
++	case CS8:
++		val |= DCT_UART_8BIT;
++		break;
++	case CS7:
++		val |= DCT_UART_7BIT;
++		break;
++	case CS6:
++		val |= DCT_UART_6BIT;
++		break;
++	case CS5:
++		val |= DCT_UART_5BIT;
++		break;
++	}
++
++	if (cflags & PARENB)
++		val |= DCT_UART_PAR_EN;
++	else
++		val &= ~DCT_UART_PAR_EN;
++
++	if (cflags & PARODD)
++		val &= ~DCT_UART_PAR_EVEN;
++	else
++		val |= DCT_UART_PAR_EVEN;
++
++	// 0: One stop bit
++	// 1: If CHAR_LEN = 5 bits        => 1.5 stop bits
++	//    If CHAR_LEN = 6, 7, 8 bits  => 2 stop bits
++	val &= ~DCT_UART_STOP_BITS;
++
++	writel(val, port->membase + DCT_UART_CTRL);
++
++	baud = uart_get_baud_rate(port, termios, old, 9600, 115200);
++	dct_uart_change_speed(port, baud);
++
++	port->read_status_mask = 0;
++	if (iflags & INPCK)
++		port->read_status_mask |= RIS_PARITY_ERROR;
++
++	port->ignore_status_mask = 0;
++	if (iflags & IGNPAR)
++		port->ignore_status_mask |= RIS_PARITY_ERROR;
++
++	uart_update_timeout(port, termios->c_cflag, baud);
++	spin_unlock_irqrestore(&port->lock, flags);
++}
++
++static int dct_uart_verify_port(struct uart_port *port,
++				struct serial_struct *ser)
++{
++	int ret = 0;
++
++	if (port->type != PORT_DCT)
++		ret = -EINVAL;
++	if (port->irq != ser->irq)
++		ret = -EINVAL;
++	if (ser->baud_base < 9600)
++		ret = -EINVAL;
++	return ret;
++}
++
++static void dct_uart_release_port(struct uart_port *port)
++{
++	if (port->flags & UPF_IOREMAP) {
++		devm_iounmap(port->dev, port->membase);
++		port->membase = NULL;
++	}
++}
++
++static int dct_uart_request_port(struct uart_port *port)
++{
++	struct platform_device *pdev = to_platform_device(port->dev);
++	struct resource *res;
++	int size;
++
++	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
++	if (!res) {
++		dev_err(&pdev->dev, "cannot obtain I/O memory region");
++		return -ENODEV;
++	}
++	size = resource_size(res);
++
++	if (!devm_request_mem_region(port->dev, port->mapbase, size,
++				     dev_name(port->dev))) {
++		dev_err(port->dev, "Memory region busy\n");
++		return -EBUSY;
++	}
++
++	if (port->flags & UPF_IOREMAP) {
++		port->membase = devm_ioremap(port->dev, port->mapbase, size);
++		if (port->membase == NULL)
++			return -ENOMEM;
++	}
++
++	return 0;
++}
++
++static void dct_uart_config_port(struct uart_port *port, int flags)
++{
++	if (flags & UART_CONFIG_TYPE) {
++		port->type = PORT_DCT;
++		dct_uart_request_port(port);
++	}
++}
++
++static void dct_uart_pm(struct uart_port *port, unsigned int state,
++			unsigned int oldstate)
++{
++	int ret;
++
++	if (!state) {
++		ret = pm_runtime_get_sync(port->dev);
++		if (ret < 0)
++			dev_err(port->dev, "Failed to enable clocks\n");
++	} else {
++		pm_runtime_mark_last_busy(port->dev);
++		pm_runtime_put_autosuspend(port->dev);
++	}
++}
++
++#ifdef CONFIG_CONSOLE_POLL
++static int dct_uart_get_poll_char(struct uart_port *port)
++{
++	if (!(readl(port->membase + DCT_UART_BYTE_CNT) & RX_BYTE_COUNT)) {
++		return NO_POLL_CHAR;
++	}
++
++	return (readl(port->membase + DCT_UART_DATA) & 0xff);
++}
++
++static void dct_uart_put_poll_char(struct uart_port *port, unsigned char ch)
++{
++	while (!(readl(port->membase + DCT_UART_BYTE_CNT) & TX_FREE_SIZE))
++		cpu_relax();
++
++	/* write char to device */
++	writel(ch, port->membase + DCT_UART_DATA);
++}
++#endif
++
++static const struct uart_ops dct_uart_ops = {
++	.set_mctrl = dct_uart_set_mctrl,
++	.get_mctrl = dct_uart_get_mctrl,
++	.tx_empty = dct_uart_tx_empty,
++	.start_tx = dct_uart_start_tx,
++	.stop_tx = dct_uart_stop_tx,
++	.stop_rx = dct_uart_stop_rx,
++	.startup = dct_uart_startup,
++	.shutdown = dct_uart_shutdown,
++	.set_termios = dct_uart_set_termios,
++	.type = dct_uart_type,
++	.config_port = dct_uart_config_port,
++	.request_port = dct_uart_request_port,
++	.release_port = dct_uart_release_port,
++	.verify_port = dct_uart_verify_port,
++	.pm = dct_uart_pm,
++#ifdef CONFIG_CONSOLE_POLL
++	.poll_get_char = dct_uart_get_poll_char,
++	.poll_put_char = dct_uart_put_poll_char,
++#endif
++};
++
++#ifdef CONFIG_SERIAL_DCT_CONSOLE
++
++static void dct_console_putchar(struct uart_port *port, unsigned char ch)
++{
++	if (!port->membase)
++		return;
++
++	while (!(readl(port->membase + DCT_UART_BYTE_CNT) & TX_FREE_SIZE))
++		cpu_relax();
++	writel(ch, port->membase + DCT_UART_DATA);
++}
++
++static void dct_serial_console_write(struct console *co, const char *s,
++				     u_int count)
++{
++	struct uart_port *port;
++	unsigned long flags;
++	unsigned int ier;
++	int locked = 1;
++
++	port = dct_ports[co->index];
++	if (!port)
++		return;
++
++	if (oops_in_progress) {
++		locked = spin_trylock_irqsave(&port->lock, flags);
++	} else
++		spin_lock_irqsave(&port->lock, flags);
++
++	/* save and disable interrupt */
++	ier = readl(port->membase + DCT_UART_IMR);
++	if (ier & (IMR_RX_IRQ | IMR_RX_IRQ))
++		writel((ier & ~(IMR_RX_IRQ | IMR_RX_IRQ)),
++		       port->membase + DCT_UART_IMR);
++
++	uart_console_write(port, s, count, dct_console_putchar);
++
++	/* restore interrupt state */
++	if (ier & (IMR_RX_IRQ | IMR_RX_IRQ))
++		writel(ier, port->membase + DCT_UART_IMR);
++
++	if (locked)
++		spin_unlock_irqrestore(&port->lock, flags);
++}
++
++static int dct_serial_console_setup(struct console *co, char *options)
++{
++	struct uart_port *port;
++	int baud = 115200;
++	int bits = 8;
++	int parity = 'n';
++	int flow = 'n';
++
++	if (co->index < 0 || co->index >= DCT_UART_PORT_NUM)
++		return -EINVAL;
++
++	port = dct_ports[co->index];
++	if (!port || !port->membase)
++		return -ENODEV;
++
++	if (options)
++		uart_parse_options(options, &baud, &parity, &bits, &flow);
++
++	return uart_set_options(port, co, baud, parity, bits, flow);
++}
++
++static struct console dct_serial_console = {
++	.name = DCT_UART_DEV_NAME,
++	.write = dct_serial_console_write,
++	.device = uart_console_device,
++	.setup = dct_serial_console_setup,
++	.flags = CON_PRINTBUFFER,
++	.index = -1,
++	.data = &dct_uart_driver,
++};
++
++static int __init dct_serial_console_init(void)
++{
++	register_console(&dct_serial_console);
++	return 0;
++}
++console_initcall(dct_serial_console_init);
++
++#define DCT_SERIAL_CONSOLE (&dct_serial_console)
++
++static void dct_putc(struct uart_port *port, unsigned char c)
++{
++	while (!(readl(port->membase + DCT_UART_BYTE_CNT) & TX_FREE_SIZE))
++		;
++	writel(c, port->membase + DCT_UART_DATA);
++}
++
++static void dct_early_write(struct console *con, const char *s, unsigned n)
++{
++	struct earlycon_device *dev = con->data;
++
++	uart_console_write(&dev->port, s, n, dct_putc);
++}
++
++static int __init dct_early_console_setup(struct earlycon_device *device,
++					  const char *opt)
++{
++	if (!device->port.membase)
++		return -ENODEV;
++
++	device->con->write = dct_early_write;
++	return 0;
++}
++EARLYCON_DECLARE(dct_uart, dct_early_console_setup);
++OF_EARLYCON_DECLARE(dct_uart, "dct,dct_uart", dct_early_console_setup);
++
++#else
++
++#define DCT_SERIAL_CONSOLE NULL
++
++#endif
++
++static struct uart_driver dct_uart_driver = {
++	.owner = THIS_MODULE,
++	.driver_name = "dct_uart",
++	.dev_name = DCT_UART_DEV_NAME,
++	.nr = DCT_UART_PORT_NUM,
++	.cons = DCT_SERIAL_CONSOLE,
++};
++
++static int dct_uart_probe(struct platform_device *pdev)
++{
++	struct resource *res_mem;
++	struct dctuart_data *pdata;
++	struct uart_port *port;
++	int ret = 0, irq;
++
++	if (pdev->dev.of_node)
++		pdev->id = of_alias_get_id(pdev->dev.of_node, "serial");
++
++	/* if id = -1; then scan for a free id and use that */
++	if (pdev->id < 0) {
++		for (pdev->id = 0; pdev->id < DCT_UART_PORT_NUM; pdev->id++)
++			if (dct_ports[pdev->id]->mapbase == 0)
++				break;
++	}
++	if (pdev->id < 0 || pdev->id >= DCT_UART_PORT_NUM) {
++		dev_err(&pdev->dev, "%s%i too large\n", DCT_UART_DEV_NAME,
++			pdev->id);
++		return -EINVAL;
++	}
++
++	res_mem = platform_get_resource(pdev, IORESOURCE_MEM, 0);
++	if (!res_mem)
++		return -ENODEV;
++
++	if (dct_ports[pdev->id] && (dct_ports[pdev->id]->mapbase) &&
++	    (dct_ports[pdev->id]->mapbase != res_mem->start)) {
++		dev_err(&pdev->dev,
++			"cannot assign to %s%i; it is already in use\n",
++			DCT_UART_DEV_NAME, pdev->id);
++		return -EBUSY;
++	}
++
++	irq = platform_get_irq(pdev, 0);
++	if (irq < 0) {
++		dev_err(&pdev->dev, "%s%i: failed to retrieve IRQ id\n",
++			DCT_UART_DEV_NAME, pdev->id);
++		return -ENODEV;
++	}
++
++	pdata = devm_kzalloc(&pdev->dev, sizeof(struct dctuart_data),
++			     GFP_KERNEL);
++	if (!pdata)
++		return -ENOMEM;
++
++	port = devm_kzalloc(&pdev->dev, sizeof(struct uart_port), GFP_KERNEL);
++	if (!port)
++		return -ENOMEM;
++
++	pdata->clk = devm_clk_get_enabled(&pdev->dev, "uart_clk");
++	if (IS_ERR(pdata->clk)) {
++		dev_err(&pdev->dev, "%s%i: failed to retrieve clock\n",
++			DCT_UART_DEV_NAME, pdev->id);
++		return PTR_ERR(pdata->clk);
++	}
++
++	pm_runtime_use_autosuspend(&pdev->dev);
++	pm_runtime_set_autosuspend_delay(&pdev->dev, UART_AUTOSUSPEND_TIMEOUT);
++	pm_runtime_set_active(&pdev->dev);
++	pm_runtime_enable(&pdev->dev);
++
++	spin_lock_init(&port->lock);
++
++	port->uartclk = clk_get_rate(pdata->clk);
++	if (port->uartclk == 0) {
++		port->uartclk = 25000000;
++		dev_err(&pdev->dev, "%s%i: clock rate is zero, use %dHz\n",
++			DCT_UART_DEV_NAME, pdev->id, port->uartclk);
++	}
++	port->dev = &pdev->dev;
++	port->fifosize = 16;
++	port->flags = UPF_BOOT_AUTOCONF | UPF_IOREMAP | UPF_LOW_LATENCY;
++	port->iobase = 1; /* mark port in use */
++	port->iotype = UPIO_MEM;
++	port->irq = irq;
++	port->line = pdev->id;
++	port->mapbase = res_mem->start;
++	port->membase = NULL;
++	port->ops = &dct_uart_ops;
++	port->private_data = pdata;
++	port->type = PORT_DCT;
++	port->x_char = 0;
++
++	dct_ports[pdev->id] = port;
++	platform_set_drvdata(pdev, port);
++
++	ret = uart_add_one_port(&dct_uart_driver, port);
++	if (ret)
++		dct_ports[pdev->id] = NULL;
++
++	pm_runtime_mark_last_busy(&pdev->dev);
++	pm_runtime_put_autosuspend(&pdev->dev);
++
++	return ret;
++}
++
++static int dct_uart_remove(struct platform_device *pdev)
++{
++	struct uart_port *port = dev_get_drvdata(&pdev->dev);
++	struct dctuart_data *pdata = port->private_data;
++	int rc;
++
++	clk_disable_unprepare(pdata->clk);
++
++	rc = uart_remove_one_port(&dct_uart_driver, port);
++	dev_set_drvdata(&pdev->dev, NULL);
++	port->mapbase = 0;
++	dct_ports[pdev->id] = NULL;
++
++	pm_runtime_disable(&pdev->dev);
++	pm_runtime_set_suspended(&pdev->dev);
++	pm_runtime_dont_use_autosuspend(&pdev->dev);
++
++	return 0;
++}
++
++/**
++ * dct_uart_suspend - Stop the device.
++ *
++ * @dev: handle to the device structure.
++ * Return: 0 always.
++ */
++static int __maybe_unused dct_uart_suspend(struct device *dev)
++{
++	struct uart_port *port = dev_get_drvdata(dev);
++
++	if (port) {
++		uart_suspend_port(&dct_uart_driver, port);
++	}
++
++	return 0;
++}
++
++/**
++ * dct_uart_resume - Resume the device.
++ *
++ * @dev: handle to the device structure.
++ * Return: 0 on success, errno otherwise.
++ */
++static int __maybe_unused dct_uart_resume(struct device *dev)
++{
++	struct uart_port *port = dev_get_drvdata(dev);
++
++	if (port) {
++		uart_resume_port(&dct_uart_driver, port);
++	}
++
++	return 0;
++}
++
++static int __maybe_unused dct_uart_runtime_suspend(struct device *dev)
++{
++	struct uart_port *port = dev_get_drvdata(dev);
++	struct dctuart_data *pdata = port->private_data;
++
++	clk_disable(pdata->clk);
++	return 0;
++};
++
++static int __maybe_unused dct_uart_runtime_resume(struct device *dev)
++{
++	struct uart_port *port = dev_get_drvdata(dev);
++	struct dctuart_data *pdata = port->private_data;
++	int ret;
++
++	ret = clk_enable(pdata->clk);
++	if (ret) {
++		dev_err(dev, "Cannot enable clock.\n");
++		return ret;
++	}
++	return 0;
++}
++
++static const struct dev_pm_ops dctuart_pm_ops = {
++	SET_SYSTEM_SLEEP_PM_OPS(dct_uart_suspend, dct_uart_resume)
++		SET_RUNTIME_PM_OPS(dct_uart_runtime_suspend,
++				   dct_uart_runtime_resume, NULL)
++};
++
++static const struct of_device_id dct_uart_dt_match[] = {
++	{ .compatible = "dct,dct_uart" },
++	{ /* sentinel */ },
++};
++MODULE_DEVICE_TABLE(of, dct_uart_dt_match);
++
++static  struct platform_driver dct_uart_platform_driver = {
++	.probe		= dct_uart_probe,
++	.remove		= dct_uart_remove,
++	.driver		= {
++		.name		= "dct_uart",
++		.of_match_table	= dct_uart_dt_match,
++		.pm = &dctuart_pm_ops,
++	},
++};
++
++static int __init dct_uart_init(void)
++{
++	int ret;
++
++	ret = uart_register_driver(&dct_uart_driver);
++	if (ret)
++		return ret;
++
++	ret = platform_driver_register(&dct_uart_platform_driver);
++	if (ret)
++		uart_unregister_driver(&dct_uart_driver);
++
++	return ret;
++}
++
++static void __exit dct_uart_exit(void)
++{
++	platform_driver_unregister(&dct_uart_platform_driver);
++	uart_unregister_driver(&dct_uart_driver);
++}
++
++module_init(dct_uart_init);
++module_exit(dct_uart_exit);
++
++MODULE_AUTHOR("Ralph Hempel <ralph.hempel@dreamchip.de>");
++MODULE_DESCRIPTION("DCT serial port driver");
++MODULE_LICENSE("GPL v2");
+diff --git a/include/uapi/linux/serial_core.h b/include/uapi/linux/serial_core.h
+index 3ba34d8378bd..865efe052d8d 100644
+--- a/include/uapi/linux/serial_core.h
++++ b/include/uapi/linux/serial_core.h
+@@ -276,4 +276,7 @@
+ /* Sunplus UART */
+ #define PORT_SUNPLUS	123
+ 
++/* DCT UART */
++#define PORT_DCT 123
++
+ #endif /* _UAPILINUX_SERIAL_CORE_H */
+-- 
+2.34.1
+

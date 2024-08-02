@@ -1,0 +1,67 @@
+From 81eb2a03e972b9432d0c93f66e833b873063b3a8 Mon Sep 17 00:00:00 2001
+From: Klaus Kaiser <klaus.kaiser@dreamchip.de>
+Date: Tue, 17 Oct 2023 12:52:52 +0200
+Subject: [PATCH 12/34] Enable debug for fpdlink and imx390 drivers
+
+Upstream-Status: Pending
+Temporal fix of timing bug in ub953 (reg read not possible)
+---
+ drivers/media/i2c/ds90ub953.c | 7 ++++++-
+ drivers/media/i2c/ds90ub960.c | 2 +-
+ drivers/media/i2c/imx390.c    | 2 +-
+ 3 files changed, 8 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/media/i2c/ds90ub953.c b/drivers/media/i2c/ds90ub953.c
+index 1e3827a60029..2b6fff26d85f 100644
+--- a/drivers/media/i2c/ds90ub953.c
++++ b/drivers/media/i2c/ds90ub953.c
+@@ -7,7 +7,7 @@
+  * Copyright (c) 2019 Luca Ceresoli <luca@lucaceresoli.net>
+  * Copyright (c) 2023 Tomi Valkeinen <tomi.valkeinen@ideasonboard.com>
+  */
+-
++#define DEBUG
+ #include <linux/clk-provider.h>
+ #include <linux/clk.h>
+ #include <linux/delay.h>
+@@ -1143,6 +1143,11 @@ static int ub953_hw_init(struct ub953_data *priv)
+ 	int ret;
+ 	u8 v;
+ 
++	/* Seems like a race condition between 954 and 953. Without waiting here
++	 * the register can not be read and we would bail out. Need to assure
++	 * that 954 is probed and settled. */
++	usleep_range(1000, 2000);
++
+ 	ret = ub953_read(priv, UB953_REG_MODE_SEL, &v);
+ 	if (ret)
+ 		return ret;
+diff --git a/drivers/media/i2c/ds90ub960.c b/drivers/media/i2c/ds90ub960.c
+index 91f6d6052a6c..516e39c7865b 100644
+--- a/drivers/media/i2c/ds90ub960.c
++++ b/drivers/media/i2c/ds90ub960.c
+@@ -25,7 +25,7 @@
+  *   are children of the same i2c-adapter where the deserializer resides.
+  * - i2c-atr could be made embeddable instead of allocatable.
+  */
+-
++#define DEBUG
+ #include <linux/bitops.h>
+ #include <linux/clk.h>
+ #include <linux/delay.h>
+diff --git a/drivers/media/i2c/imx390.c b/drivers/media/i2c/imx390.c
+index eb68a2146fcd..4d2360fcd565 100644
+--- a/drivers/media/i2c/imx390.c
++++ b/drivers/media/i2c/imx390.c
+@@ -6,7 +6,7 @@
+  *
+  * Copyright (c) 2021 Tomi Valkeinen <tomi.valkeinen@ideasonboard.com>
+  */
+-
++#define DEBUG
+ #include <linux/delay.h>
+ #include <linux/clk.h>
+ #include <linux/gpio/consumer.h>
+-- 
+2.34.1
+

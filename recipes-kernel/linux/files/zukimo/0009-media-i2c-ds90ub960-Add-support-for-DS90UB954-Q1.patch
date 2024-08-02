@@ -1,0 +1,94 @@
+From 1ed0ea220175300f78e9639a03d4eb4bd138ff65 Mon Sep 17 00:00:00 2001
+From: Jai Luthra <j-luthra@ti.com>
+Date: Fri, 15 Sep 2023 18:23:47 +0530
+Subject: [PATCH 09/34] media: i2c: ds90ub960: Add support for DS90UB954-Q1
+
+Upstream-Status: Pending
+
+DS90UB954-Q1 is an FPDLink-III deserializer that is mostly register
+compatible with DS90UB960-Q1. The main difference is that it supports
+half of the RX and TX ports, i.e. 2x FPDLink RX ports and 1x CSI TX
+port.
+
+Some other registers are marked as reserved in the datasheet as well,
+notably around CSI-TX frame and line-count monitoring and some other
+status registers. The datasheet also does not mention anything about
+setting strobe position, and fails to lock the RX ports if we forcefully
+set it, so disable it through the hw_data.
+
+Link: https://www.ti.com/lit/gpn/ds90ub954-q1
+Signed-off-by: Jai Luthra <j-luthra@ti.com>
+Signed-off-by: Vignesh Raghavendra <vigneshr@ti.com>
+---
+ .../bindings/media/i2c/ti,ds90ub960.yaml           |  1 +
+ drivers/media/i2c/ds90ub960.c                      | 14 ++++++++++++--
+ 2 files changed, 13 insertions(+), 2 deletions(-)
+
+diff --git a/Documentation/devicetree/bindings/media/i2c/ti,ds90ub960.yaml b/Documentation/devicetree/bindings/media/i2c/ti,ds90ub960.yaml
+index 289737721c2c..8aa0cd24b8aa 100644
+--- a/Documentation/devicetree/bindings/media/i2c/ti,ds90ub960.yaml
++++ b/Documentation/devicetree/bindings/media/i2c/ti,ds90ub960.yaml
+@@ -19,6 +19,7 @@ allOf:
+ properties:
+   compatible:
+     enum:
++      - ti,ds90ub954-q1
+       - ti,ds90ub960-q1
+       - ti,ds90ub9702-q1
+ 
+diff --git a/drivers/media/i2c/ds90ub960.c b/drivers/media/i2c/ds90ub960.c
+index e101bcf2356a..91f6d6052a6c 100644
+--- a/drivers/media/i2c/ds90ub960.c
++++ b/drivers/media/i2c/ds90ub960.c
+@@ -407,6 +407,7 @@ struct ub960_hw_data {
+ 	u8 num_txports;
+ 	bool is_ub9702;
+ 	bool is_fpdlink4;
++	bool ignore_strobe_pos;
+ };
+ 
+ enum ub960_rxport_mode {
+@@ -1408,7 +1409,7 @@ static void ub960_rxport_config_eq(struct ub960_data *priv, unsigned int nport)
+ 
+ 	if (priv->strobe.manual)
+ 		ub960_rxport_set_strobe_pos(priv, nport, rxport->eq.strobe_pos);
+-	else
++	else if (!priv->hw_data->ignore_strobe_pos)
+ 		ub960_rxport_set_strobe_pos(priv, nport, 0);
+ 
+ 	if (rxport->eq.manual_eq) {
+@@ -4005,6 +4006,13 @@ static void ub960_remove(struct i2c_client *client)
+ 	mutex_destroy(&priv->reg_lock);
+ }
+ 
++static const struct ub960_hw_data ds90ub954_hw = {
++	.model = "ub954",
++	.num_rxports = 2,
++	.num_txports = 1,
++	.ignore_strobe_pos = true,
++};
++
+ static const struct ub960_hw_data ds90ub960_hw = {
+ 	.model = "ub960",
+ 	.num_rxports = 4,
+@@ -4020,6 +4028,7 @@ static const struct ub960_hw_data ds90ub9702_hw = {
+ };
+ 
+ static const struct i2c_device_id ub960_id[] = {
++	{ "ds90ub954-q1", (kernel_ulong_t)&ds90ub954_hw },
+ 	{ "ds90ub960-q1", (kernel_ulong_t)&ds90ub960_hw },
+ 	{ "ds90ub9702-q1", (kernel_ulong_t)&ds90ub9702_hw },
+ 	{}
+@@ -4027,7 +4036,8 @@ static const struct i2c_device_id ub960_id[] = {
+ MODULE_DEVICE_TABLE(i2c, ub960_id);
+ 
+ static const struct of_device_id ub960_dt_ids[] = {
+-	{ .compatible = "ti,ds90ub960-q1", .data = &ds90ub960_hw },
++	{ .compatible = "ti,ds90ub954-q1", .data = &ds90ub954_hw },
++ 	{ .compatible = "ti,ds90ub960-q1", .data = &ds90ub960_hw },
+ 	{ .compatible = "ti,ds90ub9702-q1", .data = &ds90ub9702_hw },
+ 	{}
+ };
+-- 
+2.34.1
+

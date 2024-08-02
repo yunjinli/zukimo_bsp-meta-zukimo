@@ -1,0 +1,71 @@
+From 407dd0f2591b3a8a68d8aaf786e602a63852753d Mon Sep 17 00:00:00 2001
+From: Tomi Valkeinen <tomi.valkeinen@ideasonboard.com>
+Date: Mon, 31 Jul 2023 16:24:37 +0300
+Subject: [PATCH 16/34] media: i2c: ds90ub953: Use v4l2_fwnode_endpoint_parse()
+
+Upstream-Status: Pending
+
+Use v4l2_fwnode_endpoint_parse() to parse the sink endpoint parameters.
+
+Signed-off-by: Tomi Valkeinen <tomi.valkeinen@ideasonboard.com>
+Reviewed-by: Laurent Pinchart <laurent.pinchart@ideasonboard.com>
+Reviewed-by: Andy Shevchenko <andriy.shevchenko@linux.intel.com>
+---
+ drivers/media/i2c/ds90ub953.c | 19 +++++++++++++------
+ 1 file changed, 13 insertions(+), 6 deletions(-)
+
+diff --git a/drivers/media/i2c/ds90ub953.c b/drivers/media/i2c/ds90ub953.c
+index 8d7c621370cf..3969414f2a8a 100644
+--- a/drivers/media/i2c/ds90ub953.c
++++ b/drivers/media/i2c/ds90ub953.c
+@@ -25,6 +25,8 @@
+ #include <media/i2c/ds90ub9xx.h>
+ #include <media/v4l2-ctrls.h>
+ #include <media/v4l2-event.h>
++#include <media/v4l2-fwnode.h>
++#include <media/v4l2-mediabus.h>
+ #include <media/v4l2-subdev.h>
+ 
+ #define UB953_PAD_SINK			0
+@@ -1111,7 +1113,11 @@ static const struct regmap_config ub953_regmap_config = {
+ static int ub953_parse_dt(struct ub953_data *priv)
+ {
+ 	struct device *dev = &priv->client->dev;
++	struct v4l2_fwnode_endpoint vep = {
++		.bus_type = V4L2_MBUS_CSI2_DPHY,
++	};
+ 	struct fwnode_handle *ep_fwnode;
++	unsigned char nlanes;
+ 	int ret;
+ 
+ 	ep_fwnode = fwnode_graph_get_endpoint_by_id(dev_fwnode(dev),
+@@ -1119,19 +1125,20 @@ static int ub953_parse_dt(struct ub953_data *priv)
+ 	if (!ep_fwnode)
+ 		return dev_err_probe(dev, -ENOENT, "no endpoint found\n");
+ 
+-	ret = fwnode_property_count_u32(ep_fwnode, "data-lanes");
++	ret = v4l2_fwnode_endpoint_parse(ep_fwnode, &vep);
+ 
+ 	fwnode_handle_put(ep_fwnode);
+ 
+-	if (ret < 0)
++	if (ret)
+ 		return dev_err_probe(dev, ret,
+-				     "failed to parse property 'data-lanes'\n");
++				     "failed to parse sink endpoint data\n");
+ 
+-	if (ret != 1 && ret != 2 && ret != 4)
++	nlanes = vep.bus.mipi_csi2.num_data_lanes;
++	if (nlanes != 1 && nlanes != 2 && nlanes != 4)
+ 		return dev_err_probe(dev, -EINVAL,
+-				     "bad number of data-lanes: %d\n", ret);
++				     "bad number of data-lanes: %u\n", nlanes);
+ 
+-	priv->num_data_lanes = ret;
++	priv->num_data_lanes = nlanes;
+ 
+ 	return 0;
+ }
+-- 
+2.34.1
+

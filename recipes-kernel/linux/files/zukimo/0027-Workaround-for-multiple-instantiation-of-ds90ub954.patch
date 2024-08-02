@@ -1,0 +1,30 @@
+From 92aab98c0a8bc310b0b566a8daa91134808cbfe7 Mon Sep 17 00:00:00 2001
+From: Klaus Kaiser <klaus.kaiser@dreamchip.de>
+Date: Tue, 20 Feb 2024 14:06:25 +0100
+Subject: [PATCH 27/34] Workaround for multiple instantiation of ds90ub954.
+
+Upstream-Status: Pending
+---
+ drivers/media/i2c/ds90ub960.c | 6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/media/i2c/ds90ub960.c b/drivers/media/i2c/ds90ub960.c
+index f1c1b391399c..bd962ffb6b25 100644
+--- a/drivers/media/i2c/ds90ub960.c
++++ b/drivers/media/i2c/ds90ub960.c
+@@ -3844,8 +3844,10 @@ static int ub960_get_hw_resources(struct ub960_data *priv)
+ 	priv->pd_gpio =
+ 		devm_gpiod_get_optional(dev, "powerdown", GPIOD_OUT_HIGH);
+ 	if (IS_ERR(priv->pd_gpio))
+-		return dev_err_probe(dev, PTR_ERR(priv->pd_gpio),
+-				     "Cannot get powerdown GPIO\n");
++		dev_warn(dev, "Unable to get powerdown, pin already used by another instance?");
++		// @todo Implement handling for multiple instances ZKIBSP-118
++		// return dev_err_probe(dev, PTR_ERR(priv->pd_gpio),
++		// 		     "Cannot get powerdown GPIO\n");
+ 
+ 	priv->refclk = devm_clk_get(dev, "refclk");
+ 	if (IS_ERR(priv->refclk))
+-- 
+2.34.1
+

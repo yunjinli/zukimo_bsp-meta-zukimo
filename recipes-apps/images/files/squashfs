@@ -1,0 +1,21 @@
+#!/bin/sh
+
+squashfs_enabled() {
+	return 0
+}
+
+squashfs_run() {
+	filesystems="squashfs"
+
+	for fs in $filesystems; do
+		eval "fs_options=\$bootparam_${fs}"
+		if [ -n "$fs_options" ]; then
+			dev=`expr "$fs_options" : '\([^:]*\).*'`
+			path=`expr "$fs_options" : '[^:]*:\([^:]*\).*'`
+
+			info "Mounting $dev as $fs on $path as $fs..."
+			mkdir -p $path
+			mount -t $fs $dev $path
+		fi
+	done
+}

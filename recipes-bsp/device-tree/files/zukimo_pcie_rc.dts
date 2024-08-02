@@ -1,0 +1,11 @@
+/dts-v1/;
+
+#include "zukimo.dts"
+
+&pcie_rc0 {
+	status = "okay";
+};
+
+&pcie_ep0 {
+	status = "disabled";
+};

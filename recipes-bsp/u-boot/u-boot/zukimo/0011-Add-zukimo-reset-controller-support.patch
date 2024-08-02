@@ -1,0 +1,328 @@
+From ea629e4b7023abad60ae973c0724ea388688884f Mon Sep 17 00:00:00 2001
+From: Stefan Stuerke <stefan.stuerke@dreamchip.de>
+Date: Fri, 19 Apr 2024 14:16:40 +0200
+Subject: [PATCH 11/12] Add zukimo reset controller support
+
+Upstream-Status: Pending
+---
+ arch/arm/dts/zukimo.dts          |   7 ++
+ drivers/reset/Kconfig            |   8 ++
+ drivers/reset/Makefile           |   1 +
+ drivers/reset/reset-dct-zukimo.c | 187 +++++++++++++++++++++++++++++++
+ include/dct/eth_cru_reg.h        |  59 ++++++++++
+ 5 files changed, 262 insertions(+)
+ create mode 100644 drivers/reset/reset-dct-zukimo.c
+ create mode 100644 include/dct/eth_cru_reg.h
+
+diff --git a/arch/arm/dts/zukimo.dts b/arch/arm/dts/zukimo.dts
+index f201e7a3dc..ce48002b0b 100644
+--- a/arch/arm/dts/zukimo.dts
++++ b/arch/arm/dts/zukimo.dts
+@@ -175,6 +175,12 @@
+             interrupts = <GIC_PPI 9 IRQ_TYPE_LEVEL_LOW>;
+          };
+ 
++        eth_reset: reset {
++            compatible = "dct,eth-reset-ctrl";
++            reg = <0x00 0x24060000 0x00 0x1000>;
++            #reset-cells = <1>;
++        };
++
+         uart0: serial@22080000 {
+             compatible = "dct,dct_uart", "dct_uart";
+             reg = <0x00 0x22080000 0x00 0x100>;
+@@ -220,6 +226,7 @@
+ 
+             phy-mode = "rgmii-id";
+             phy-handle = <&ethphy0>;
++            resets = <&eth_reset 0>;
+ 
+             // settings for cdns,macb
+             adi,rx-internal-delay-ps = <2400>;
+diff --git a/drivers/reset/Kconfig b/drivers/reset/Kconfig
+index e4039d7474..6cd4600505 100644
+--- a/drivers/reset/Kconfig
++++ b/drivers/reset/Kconfig
+@@ -219,4 +219,12 @@ config RESET_AT91
+ 	  This enables the Reset Controller driver support for Microchip/Atmel
+ 	  SoCs. Mainly used to expose assert/deassert methods to other drivers
+ 	  that require it.
++
++config RESET_DCT_ZUKIMO
++	bool "Enable support for DCT/Zukimo Reset Controller driver"
++	depends on DM_RESET && ARCH_ZUKIMO
++	help
++	  This enables the Reset Controller driver support for DCT/Zukimo
++	  SoCs. Mainly used to expose assert/deassert methods to other drivers
++	  that require it.
+ endmenu
+diff --git a/drivers/reset/Makefile b/drivers/reset/Makefile
+index 6c8b45ecba..dc86a63aad 100644
+--- a/drivers/reset/Makefile
++++ b/drivers/reset/Makefile
+@@ -32,3 +32,4 @@ obj-$(CONFIG_RESET_SCMI) += reset-scmi.o
+ obj-$(CONFIG_RESET_ZYNQMP) += reset-zynqmp.o
+ obj-$(CONFIG_RESET_DRA7) += reset-dra7.o
+ obj-$(CONFIG_RESET_AT91) += reset-at91.o
++obj-$(CONFIG_RESET_DCT_ZUKIMO) += reset-dct-zukimo.o
+diff --git a/drivers/reset/reset-dct-zukimo.c b/drivers/reset/reset-dct-zukimo.c
+new file mode 100644
+index 0000000000..bebfc77326
+--- /dev/null
++++ b/drivers/reset/reset-dct-zukimo.c
+@@ -0,0 +1,187 @@
++/*
++ * reset-dct-zukimo.c, by Dream Chip
++ *
++ * This program is free software; you can redistribute it and/or modify it
++ * under the terms of the GNU General Public License version 2 as published
++ * by the Free Software Foundation.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ */
++
++#include <common.h>
++#include <dm.h>
++#include <log.h>
++#include <malloc.h>
++#include <reset-uclass.h>
++#include <linux/bitops.h>
++#include <linux/io.h>
++#include <asm/arch-rockchip/hardware.h>
++#include <dm/device-internal.h>
++#include <dm/lists.h>
++#include <dct/eth_cru_reg.h>
++
++struct dct_reset_ctrl_devdata {
++	u32 reg_offset_reset;
++	bool reset_active_low;
++	u32 reset_mask;
++	u32 reg_offset_clk_en;
++	bool clk_en_active_low;
++	u32 clk_en_mask;
++	u32 reg_offset_noc_idle;
++	bool noc_idle_active_low;
++	u32 noc_idle_mask;
++	u32 reg_offset_clk_sel;
++	u32 clk_sel_mask;
++	u32 clk_sel_value;
++};
++
++struct dct_reset_ctrl_data {
++	void __iomem *membase;
++	const struct dct_reset_ctrl_devdata *devdata;
++};
++
++static struct dct_reset_ctrl_data *to_dct_reset_ctrl_data(struct reset_ctl *rcdev)
++{
++	return dev_get_priv(rcdev->dev);
++}
++
++static int dct_reset_ctrl_assert(struct reset_ctl *rcdev)
++{
++	struct dct_reset_ctrl_data *data = to_dct_reset_ctrl_data(rcdev);
++	u32 value;
++
++	if (data->devdata->clk_en_mask) {
++		value = readl(data->membase + data->devdata->reg_offset_clk_en);
++		if (data->devdata->clk_en_active_low) {
++			value |= data->devdata->clk_en_mask;
++		} else {
++			value &= ~data->devdata->clk_en_mask;
++		}
++		writel(value, data->membase + data->devdata->reg_offset_clk_en);
++	}
++
++	if (data->devdata->reset_mask) {
++		value = readl(data->membase + data->devdata->reg_offset_reset);
++		if (data->devdata->reset_active_low) {
++			value &= ~data->devdata->reset_mask;
++		} else {
++			value |= data->devdata->reset_mask;
++		}
++		writel(value, data->membase + data->devdata->reg_offset_reset);
++	}
++
++	if (data->devdata->noc_idle_mask) {
++		value = readl(data->membase + data->devdata->reg_offset_noc_idle);
++		if (data->devdata->noc_idle_active_low) {
++			value &= ~data->devdata->noc_idle_mask;
++		} else {
++			value |= data->devdata->noc_idle_mask;
++		}
++		writel(value, data->membase + data->devdata->reg_offset_noc_idle);
++	}
++
++	/* make sure the reset signal is active for at least 20us */
++	udelay(20);
++
++	return 0;
++}
++
++static int dct_reset_ctrl_deassert(struct reset_ctl *rcdev)
++{
++	struct dct_reset_ctrl_data *data = to_dct_reset_ctrl_data(rcdev);
++	u32 value;
++
++	if (data->devdata->noc_idle_mask) {
++		value = readl(data->membase + data->devdata->reg_offset_noc_idle);
++		if (data->devdata->noc_idle_active_low) {
++			value |= data->devdata->noc_idle_mask;
++		} else {
++			value &= ~data->devdata->noc_idle_mask;
++		}
++		writel(value, data->membase + data->devdata->reg_offset_noc_idle);
++	}
++
++	if (data->devdata->reset_mask) {
++		value = readl(data->membase + data->devdata->reg_offset_reset);
++		if (data->devdata->reset_active_low) {
++			value |= data->devdata->reset_mask;
++		} else {
++			value &= ~data->devdata->reset_mask;
++		}
++		writel(value, data->membase + data->devdata->reg_offset_reset);
++	}
++
++	if (data->devdata->clk_sel_mask) {
++		value = readl(data->membase + data->devdata->reg_offset_clk_sel);
++		value &= ~data->devdata->clk_sel_mask;
++		value |= data->devdata->clk_sel_value;
++		writel(value, data->membase + data->devdata->reg_offset_clk_sel);
++	}
++
++	if (data->devdata->clk_en_mask) {
++		value = readl(data->membase + data->devdata->reg_offset_clk_en);
++		if (data->devdata->clk_en_active_low) {
++			value &= ~data->devdata->clk_en_mask;
++		} else {
++			value |= data->devdata->clk_en_mask;
++		}
++		writel(value, data->membase + data->devdata->reg_offset_clk_en);
++	}
++
++	return 0;
++}
++
++const struct reset_ops dct_reset_ctrl_ops = {
++	.rst_assert		= dct_reset_ctrl_assert,
++	.rst_deassert	= dct_reset_ctrl_deassert,
++};
++
++static const struct dct_reset_ctrl_devdata dct_eth_cru_mapping = {
++	.reg_offset_reset = ETH_SWRESET_REG,
++	.reset_active_low = true,
++	.reset_mask = SW_RESET_GEM_N_MASK | SW_RESET_RX_N_MASK | SW_RESET_TX_N_MASK,
++	.reg_offset_clk_en = ETH_CLKEN_REG,
++	.clk_en_active_low = false,
++	.clk_en_mask = CLKEN_GEM_MASK | CLKEN_RX_MASK | CLKEN_TX_MASK,
++	.reg_offset_clk_sel = ETH_CLKSEL_REG,
++	.clk_sel_mask = CLKSEL_TX_MASK,
++	.clk_sel_value = 0x0,
++};
++
++static const struct dct_reset_ctrl_devdata dct_default_cru_mapping = { 0 };
++
++static const struct udevice_id dct_reset_ctrl_dt_ids[] = {
++	{ .compatible = "dct,eth-reset-ctrl" },
++	{ /* sentinel */ },
++};
++
++static int dct_reset_ctrl_probe(struct udevice *dev)
++{
++	struct dct_reset_ctrl_data *data = dev_get_priv(dev);;
++
++	data->membase = dev_remap_addr(dev);
++	if (!data->membase) {
++		return -ENOMEM;
++	}
++
++	if (device_is_compatible(dev, "dct,eth-reset-ctrl")) {
++		data->devdata = &dct_eth_cru_mapping;
++	} else {
++		data->devdata = &dct_default_cru_mapping;
++	}
++
++	return 0;
++}
++
++U_BOOT_DRIVER(dct_zukimo_reset) = {
++	.name = "dct_zukimo_reset",
++	.id = UCLASS_RESET,
++	.of_match = dct_reset_ctrl_dt_ids,
++	.ops = &dct_reset_ctrl_ops,
++	.probe = dct_reset_ctrl_probe,
++	.priv_auto	= sizeof(struct dct_reset_ctrl_data),
++};
+diff --git a/include/dct/eth_cru_reg.h b/include/dct/eth_cru_reg.h
+new file mode 100644
+index 0000000000..f06895ae04
+--- /dev/null
++++ b/include/dct/eth_cru_reg.h
+@@ -0,0 +1,59 @@
++/*
++ * Copyright (C) 2024 Dream Chip Technologies
++ *
++ * SPDX-License-Identifier: BSD
++ *
++ * Generated by sig2
++ */
++
++#ifndef __ETH_CRU__
++#define __ETH_CRU__
++
++#define ETH_MODULE_ID_REG 0x00000000
++#define ETH_CLKSEL_REG 0x00000004
++#define ETH_SWRESET_REG 0x00000008
++#define ETH_CLKEN_REG 0x0000000C
++
++/* ETH_MODULE_ID_REG */
++// Vendor ID
++#define DCT_ID_MASK 0xFF000000U
++#define DCT_ID_SHIFT 24U
++// Project Zukimo
++#define PROJECT_ID_MASK 0x00FF0000U
++#define PROJECT_ID_SHIFT 16U
++// Revision
++#define REVISION_MASK 0x0000FF00U
++#define REVISION_SHIFT 8U
++// Module ID
++#define MODULE_ID_MASK 0x000000FFU
++#define MODULE_ID_SHIFT 0U
++
++/* ETH_CLKSEL_REG */
++// (1) Select external 125MHz reference clock input from RGMII PHY.
++// (0) Select internal 125MHz reference clock (clk_gem125) from PLL
++#define CLKSEL_TX_MASK 0x00000001U
++#define CLKSEL_TX_BIT 0
++
++/* ETH_SWRESET_REG */
++// (0) software reset for GEM core clock domains
++#define SW_RESET_GEM_N_MASK 0x00000001U
++#define SW_RESET_GEM_N_BIT 0
++// (0) software reset for GEM RX clock domain
++#define SW_RESET_RX_N_MASK 0x00000002U
++#define SW_RESET_RX_N_BIT 1
++// (0) software reset for GEM TX clock domain
++#define SW_RESET_TX_N_MASK 0x00000004U
++#define SW_RESET_TX_N_BIT 2
++
++/* ETH_CLKEN_REG */
++// (1) clock enable for GEM core clock domains
++#define CLKEN_GEM_MASK 0x00000001U
++#define CLKEN_GEM_BIT 0
++// (1) clock enable for GEM RX clock domain
++#define CLKEN_RX_MASK 0x00000002U
++#define CLKEN_RX_BIT 1
++// (1) clock enable for GEM TX clock domain
++#define CLKEN_TX_MASK 0x00000004U
++#define CLKEN_TX_BIT 2
++
++#endif /* __ETH_CRU__ */
+-- 
+2.34.1
+

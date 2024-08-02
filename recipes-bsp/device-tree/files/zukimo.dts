@@ -1,0 +1,97 @@
+/dts-v1/;
+
+#include "zukimo_common.dtsi"
+#include "zukimo_isp0.dtsi"
+#include "zukimo_fpdlink0.dtsi"
+#include "zukimo_fpdlink1.dtsi"
+#include "zukimo_camera01.dtsi"
+#include "zukimo_camera23.dtsi"
+#include "zukimo_isp1.dtsi"
+#include "zukimo_fpdlink2.dtsi"
+#include "zukimo_fpdlink3.dtsi"
+#include "zukimo_camera45.dtsi"
+#include "zukimo_camera67.dtsi"
+#include "zukimo_pcie_rc.dtsi"
+#include "zukimo_pcie_ep.dtsi"
+
+/ {
+
+	version = "zukimo dt version 0.0.9";
+
+};
+
+&dct_i2c0 {
+	status = "okay";
+	clock-frequency = <400000>;
+};
+
+&dct_i2c1 {
+	status = "okay";
+	clock-frequency = <400000>;
+};
+
+&dct_i2c2 {
+	status = "okay";
+	clock-frequency = <400000>;
+};
+
+&dct_mvdu {
+	// TM_YC_EXSYNC_1REPL
+	// YC 4:2:2 with separate syncs, 16 bit, 1 clk/pix
+	timing-mode = <1>;
+
+	// TM_YC_EMSYNC_1REPL
+	// YC 4:2:2 with embedded syncs, 16 bit, 1 clk/pix
+	// timing-mode = <1>;
+
+	// enable BT.6xx output
+	tv6xy-enable = <1>;
+
+	cb-cr-swap-enable = <1>;
+	luma-chroma-swap-enable = <1>;
+	// video-out-bypass-enable = <1>;
+
+	status = "okay";
+
+	hdmio-i2c-bus = <&dct_i2c1>;
+	// HDMI_INT_N
+	hdmio-int-gpios = <&dct_gpio 3 0>;
+	// HDMI_PD_N
+	hdmio-pd-gpios = <&dct_gpio 6 GPIO_ACTIVE_LOW>;
+	// PD at reset high
+	adv7511-addr = <0x3d>;
+
+	video-input {
+		/* YCbCr 4:2:2 Formats */
+		input-id = <1>; // separate syncs
+		// input-id = <2>; // embedded syncs
+		input-style = <1>; // style 1
+		bit-justification = <1>; // right justified - bit justfication for YCbCr 4:2:2 modes
+		input-color-depth = <8>; // bit
+		hsync-polarity = <0>; // high active
+		vsync-polarity = <0>; // high active
+	};
+
+	video-output {
+		hdmi-mode = <1>; // HDMI
+//            output-format = <0>; // 4:4:4
+//            output-color-space = <0>; // RGB
+		output-format = <1>; // 4:2:2
+		output-color-space = <1>; // YCbCr
+	};
+};
+
+&sd_card_supply {
+	gpio = <&dct_ipc_gpio 14 GPIO_ACTIVE_HIGH>;
+	enable-active-high;
+	status = "okay";
+};
+
+&sdhc0 {
+	status = "okay";
+};
+
+
+&macb {
+	status = "okay";
+};

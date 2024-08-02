@@ -1,0 +1,14 @@
+[Unit]
+Description=Precision Time Protocol daemon
+After=syslog.target network.target
+Wants=phc2sys.service
+
+[Service]
+# set an initial date to start somewhere (date -d"2024-01-01 00:00:00" +%s)
+ExecStartPre=/usr/sbin/phc_ctl /dev/ptp0 set 1704067200.0
+# start gPTP profile for TSN as master clock (option "-s" when used as slave)
+ExecStart=/usr/sbin/ptp4l -P2Hi eth0 -f /usr/share/doc/linuxptp/configs/gPTP.cfg --step_threshold=1
+Restart=always
+
+[Install]
+WantedBy=multi-user.target

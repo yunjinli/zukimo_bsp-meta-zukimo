@@ -1,0 +1,36 @@
+From 50f018db61e226c7c3e5e8803e37513185aa5765 Mon Sep 17 00:00:00 2001
+From: Klaus Kaiser <klaus.kaiser@dreamchip.de>
+Date: Fri, 8 Mar 2024 15:47:46 +0100
+Subject: [PATCH 28/34] macb/gem: Enable ptp capability
+
+Upstream-Status: Pending
+---
+ drivers/net/ethernet/cadence/macb_main.c | 5 +++--
+ 1 file changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/net/ethernet/cadence/macb_main.c b/drivers/net/ethernet/cadence/macb_main.c
+index de34a74bf662..8ddbe9e80c3f 100644
+--- a/drivers/net/ethernet/cadence/macb_main.c
++++ b/drivers/net/ethernet/cadence/macb_main.c
+@@ -4704,7 +4704,8 @@ static const struct macb_config sama5d3macb_config = {
+ };
+ 
+ static const struct macb_config pc302gem_config = {
+-	.caps = MACB_CAPS_USRIO_DISABLED | MACB_CAPS_SG_DISABLED | MACB_CAPS_GIGABIT_MODE_AVAILABLE,
++	.caps = MACB_CAPS_USRIO_DISABLED | MACB_CAPS_SG_DISABLED |
++		MACB_CAPS_GIGABIT_MODE_AVAILABLE | MACB_CAPS_GEM_HAS_PTP,
+ 	.dma_burst_length = 16,
+ 	.clk_init = macb_clk_init,
+ 	.init = macb_init,
+@@ -5017,7 +5018,7 @@ static int macb_probe(struct platform_device *pdev)
+ 
+ 	tasklet_setup(&bp->hresp_err_tasklet, macb_hresp_error_task);
+ 
+-	netdev_info(dev, "Cadence %s rev 0x%08x at 0x%08lx irq %d (%pM)\n",
++netdev_info(dev, "Cadence %s rev 0x%08x at 0x%08lx irq %d (%pM)\n",
+ 		    macb_is_gem(bp) ? "GEM" : "MACB", macb_readl(bp, MID),
+ 		    dev->base_addr, dev->irq, dev->dev_addr);
+ 
+-- 
+2.34.1
+

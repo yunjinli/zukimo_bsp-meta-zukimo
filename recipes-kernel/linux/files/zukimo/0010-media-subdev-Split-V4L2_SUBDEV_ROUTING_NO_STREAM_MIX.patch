@@ -1,0 +1,110 @@
+From dabcc3e064fb83d80f36038ddcf5977c29013bc0 Mon Sep 17 00:00:00 2001
+From: Tomi Valkeinen <tomi.valkeinen@ideasonboard.com>
+Date: Fri, 27 Jan 2023 12:18:22 +0200
+Subject: [PATCH 10/34] media: subdev: Split V4L2_SUBDEV_ROUTING_NO_STREAM_MIX
+
+Upstream-Status: Pending
+
+V4L2_SUBDEV_ROUTING_NO_STREAM_MIX routing validation flag means that all
+routes from a sink pad must go to the same source pad and all routes
+going to the same source pad must originate from the same sink pad.
+
+This does not cover all use cases. For example, if a device routes
+all streams from a single sink pad to any of the source pads, but
+streams from multiple sink pads can go to the same source pad, the
+current flag is too restrictive.
+
+Split the flag into two parts, V4L2_SUBDEV_ROUTING_NO_SINK_STREAM_MIX
+and V4L2_SUBDEV_ROUTING_NO_SOURCE_STREAM_MIX, which add the restriction
+only on one side of the device. Together they mean the same as
+V4L2_SUBDEV_ROUTING_NO_STREAM_MIX.
+
+Signed-off-by: Tomi Valkeinen <tomi.valkeinen@ideasonboard.com>
+---
+ drivers/media/v4l2-core/v4l2-subdev.c | 17 +++++++++++++----
+ include/media/v4l2-subdev.h           | 16 +++++++++++++---
+ 2 files changed, 26 insertions(+), 7 deletions(-)
+
+diff --git a/drivers/media/v4l2-core/v4l2-subdev.c b/drivers/media/v4l2-core/v4l2-subdev.c
+index dd3c2d86f96e..e513b859a7df 100644
+--- a/drivers/media/v4l2-core/v4l2-subdev.c
++++ b/drivers/media/v4l2-core/v4l2-subdev.c
+@@ -1661,10 +1661,11 @@ int v4l2_subdev_routing_validate(struct v4l2_subdev *sd,
+ 		}
+ 
+ 		/*
+-		 * V4L2_SUBDEV_ROUTING_NO_STREAM_MIX: Streams on the same pad
+-		 * may not be routed to streams on different pads.
++		 * V4L2_SUBDEV_ROUTING_NO_SINK_STREAM_MIX: Streams on the same
++		 * sink pad may not be routed to streams on different source
++		 * pads.
+ 		 */
+-		if (disallow & V4L2_SUBDEV_ROUTING_NO_STREAM_MIX) {
++		if (disallow & V4L2_SUBDEV_ROUTING_NO_SINK_STREAM_MIX) {
+ 			if (remote_pads[route->sink_pad] != U32_MAX &&
+ 			    remote_pads[route->sink_pad] != route->source_pad) {
+ 				dev_dbg(sd->dev,
+@@ -1673,6 +1674,15 @@ int v4l2_subdev_routing_validate(struct v4l2_subdev *sd,
+ 				goto out;
+ 			}
+ 
++			remote_pads[route->sink_pad] = route->source_pad;
++		}
++
++		/*
++		 * V4L2_SUBDEV_ROUTING_NO_SOURCE_STREAM_MIX: Streams on the same
++		 * source pad may not be routed to streams on different sink
++		 * pads.
++		 */
++		if (disallow & V4L2_SUBDEV_ROUTING_NO_SOURCE_STREAM_MIX) {
+ 			if (remote_pads[route->source_pad] != U32_MAX &&
+ 			    remote_pads[route->source_pad] != route->sink_pad) {
+ 				dev_dbg(sd->dev,
+@@ -1681,7 +1691,6 @@ int v4l2_subdev_routing_validate(struct v4l2_subdev *sd,
+ 				goto out;
+ 			}
+ 
+-			remote_pads[route->sink_pad] = route->source_pad;
+ 			remote_pads[route->source_pad] = route->sink_pad;
+ 		}
+ 
+diff --git a/include/media/v4l2-subdev.h b/include/media/v4l2-subdev.h
+index 6a77aa9bb1da..9d9c9e5d593c 100644
+--- a/include/media/v4l2-subdev.h
++++ b/include/media/v4l2-subdev.h
+@@ -1638,19 +1638,29 @@ u64 v4l2_subdev_state_xlate_streams(const struct v4l2_subdev_state *state,
+  * @V4L2_SUBDEV_ROUTING_NO_N_TO_1:
+  *	multiple input streams may not be routed to the same output stream
+  *	(stream merging)
+- * @V4L2_SUBDEV_ROUTING_NO_STREAM_MIX:
+- *	streams on the same pad may not be routed to streams on different pads
++ * @V4L2_SUBDEV_ROUTING_NO_SINK_STREAM_MIX:
++ *	streams on the same sink pad may not be routed to streams on different
++ * 	source pads
++ * @V4L2_SUBDEV_ROUTING_NO_SOURCE_STREAM_MIX:
++ *	streams on the same source pad may not be routed to streams on different
++ * 	sink pads
+  * @V4L2_SUBDEV_ROUTING_ONLY_1_TO_1:
+  *	only non-overlapping 1-to-1 stream routing is allowed (a combination of
+  *	@V4L2_SUBDEV_ROUTING_NO_1_TO_N and @V4L2_SUBDEV_ROUTING_NO_N_TO_1)
++ * @V4L2_SUBDEV_ROUTING_NO_STREAM_MIX:
++ *	streams on the same pad may not be routed to streams on different pads
+  */
+ enum v4l2_subdev_routing_restriction {
+ 	V4L2_SUBDEV_ROUTING_NO_1_TO_N = BIT(0),
+ 	V4L2_SUBDEV_ROUTING_NO_N_TO_1 = BIT(1),
+-	V4L2_SUBDEV_ROUTING_NO_STREAM_MIX = BIT(2),
++	V4L2_SUBDEV_ROUTING_NO_SINK_STREAM_MIX = BIT(2),
++	V4L2_SUBDEV_ROUTING_NO_SOURCE_STREAM_MIX = BIT(3),
+ 	V4L2_SUBDEV_ROUTING_ONLY_1_TO_1 =
+ 		V4L2_SUBDEV_ROUTING_NO_1_TO_N |
+ 		V4L2_SUBDEV_ROUTING_NO_N_TO_1,
++	V4L2_SUBDEV_ROUTING_NO_STREAM_MIX =
++		V4L2_SUBDEV_ROUTING_NO_SINK_STREAM_MIX |
++		V4L2_SUBDEV_ROUTING_NO_SOURCE_STREAM_MIX,
+ };
+ 
+ /**
+-- 
+2.34.1
+

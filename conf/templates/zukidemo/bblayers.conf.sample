@@ -1,0 +1,19 @@
+# Version of layers configuration, specific to
+# each defined distro in the repository.
+# Format: ${DISTRO}-<version>
+TD_BBLAYERS_CONF_VERSION = "zukidemo-5"
+
+BBPATH = "${TOPDIR}"
+BBFILES ?= ""
+
+BBLAYERS ?= " \
+  ##OEROOT##/meta \
+  ##OEROOT##/meta-poky \
+  ##OEROOT##/meta-zukimo \
+  ##OEROOT##/meta-oe \
+  ##OEROOT##/meta-initramfs \
+  ##OEROOT##/meta-python \
+  ##OEROOT##/meta-networking \
+  ##OEROOT##/meta-multimedia \
+  ##OEROOT##/meta-filesystems \
+  "

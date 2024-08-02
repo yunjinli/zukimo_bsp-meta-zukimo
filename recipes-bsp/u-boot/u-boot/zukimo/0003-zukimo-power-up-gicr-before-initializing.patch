@@ -1,0 +1,434 @@
+From cb2e75e1fda25dd6b09f79ea6adf4795de357d64 Mon Sep 17 00:00:00 2001
+From: Stefan Stuerke <stefan.stuerke@dreamchip.de>
+Date: Wed, 12 Apr 2023 14:01:14 +0200
+Subject: [PATCH 03/12] zukimo: power up gicr before initializing
+
+Upstream-Status: Pending
+
+---
+ arch/arm/lib/gic_64.S           |   3 +
+ arch/arm/mach-zukimo/Makefile   |   2 +-
+ arch/arm/mach-zukimo/lowlevel.S | 387 ++++++++++++++++++++++++++++++++
+ 3 files changed, 391 insertions(+), 1 deletion(-)
+ create mode 100644 arch/arm/mach-zukimo/lowlevel.S
+
+diff --git a/arch/arm/lib/gic_64.S b/arch/arm/lib/gic_64.S
+index 86cd882fc7..f3cafc920a 100644
+--- a/arch/arm/lib/gic_64.S
++++ b/arch/arm/lib/gic_64.S
+@@ -108,6 +108,9 @@ ENTRY(gic_init_secure_percpu)
+ 	str	wzr, [x10, GICR_IGROUPMODRn]	/* SGIs|PPIs Group1NS */
+ 	mov	w11, #0x1		/* Enable SGI 0 */
+ 	str	w11, [x10, GICR_ISENABLERn]
++	ldr w11, [x10, GICD_IPRIORITYRn]	/* set priority for SGI0 */
++	and w11, w11, #~0xFF
++	str w11, [x10, GICD_IPRIORITYRn]
+ 
+ 	switch_el x10, 3f, 2f, 1f
+ 3:
+diff --git a/arch/arm/mach-zukimo/Makefile b/arch/arm/mach-zukimo/Makefile
+index dffd4a2719..5abefcf6b2 100644
+--- a/arch/arm/mach-zukimo/Makefile
++++ b/arch/arm/mach-zukimo/Makefile
+@@ -2,4 +2,4 @@
+ # SPDX-License-Identifier:	GPL-2.0+
+ #
+ 
+-obj-$(CONFIG_ARMV8_PSCI)	+= zukimo_psci.o
++obj-$(CONFIG_ARMV8_PSCI)	+= lowlevel.o zukimo_psci.o
+diff --git a/arch/arm/mach-zukimo/lowlevel.S b/arch/arm/mach-zukimo/lowlevel.S
+new file mode 100644
+index 0000000000..e7e73b34d1
+--- /dev/null
++++ b/arch/arm/mach-zukimo/lowlevel.S
+@@ -0,0 +1,387 @@
++/* SPDX-License-Identifier: GPL-2.0+ */
++/*
++ * (C) Copyright 2023 Dream Chip Technologies GmbH
++ *
++ * Extracted from:
++ *		arch/arm/cpu/armv8/start.S
++ *		atf - gic driver code
++ */
++
++#include <config.h>
++#include <linux/linkage.h>
++#include <asm/gic.h>
++#include <asm/macro.h>
++#include <asm/u-boot.h>
++
++#if defined(CONFIG_GICV3)
++#define GICR_PWRR	0x0024
++ENTRY(gicr_poweron_percpu)
++	/*
++	 * Initialize ReDistributor
++	 * x0: ReDistributor Base
++	 */
++	mrs	x10, mpidr_el1
++	lsr	x9, x10, #32
++	bfi	x10, x9, #24, #8	/* w10 is aff3:aff2:aff1:aff0 */
++	mov	x9, x0
++1:	ldr	x11, [x9, GICR_TYPER]
++	lsr	x11, x11, #32		/* w11 is aff3:aff2:aff1:aff0 */
++	cmp	w10, w11
++	b.eq	2f
++	add	x9, x9, #(2 << 16)
++	b	1b
++
++	/* x9: ReDistributor Base Address of Current CPU */
++	/* wait until group is not transitioning: */
++2:	mov w10, #0xc
++0:	ldr w11, [x9, GICR_PWRR]
++	and w11, w11, #0xc
++	cbz w11, 1f
++	cmp w11, w10
++	b.ne 0b
++
++	/* Power on redistributor
++	gicr_write_pwrr(base, PWRR_ON);
++	*/
++1:	str wzr, [x9, GICR_PWRR]
++
++	/*
++	 * Wait until the power on state is reflected.
++	 * If RDPD == 0 then powered on.
++	*/
++0:	ldr w11, [x9, GICR_PWRR]
++	and w11, w11, #1
++	cbnz	w11, 0b
++
++	ret
++ENDPROC(gicr_poweron_percpu)
++#endif
++
++ENTRY(gicr_init_percpu)
++	mov x27, lr		/* Save LR */
++#if defined(CONFIG_GICV3)
++	ldr	x0, =GICR_BASE
++	bl	gicr_poweron_percpu
++#elif defined(CONFIG_GICV2)
++	ldr	x0, =GICD_BASE
++	ldr	x1, =GICC_BASE
++#endif
++	bl	gic_init_secure_percpu
++	mov lr, x27		/* Restore LR */
++	ret
++ENDPROC(gicr_init_percpu)
++
++ENTRY(gic_init)
++#if defined(CONFIG_GICV2) || defined(CONFIG_GICV3)
++	mov x28, lr		/* Save LR */
++
++	branch_if_slave x0, 1f
++
++	/* check if cpu0 should behave like a secondary CPU */
++	ldr x17, =psci_cpu0_role
++	ldr x17, [x17]
++	ldr x18, =CPU_ROLE_SECONDARY
++	cmp x17, x18
++	beq 1f
++
++	/* main cpu initializes distibutor and it's redistributor first:
++	 */
++	ldr	x0, =GICD_BASE
++	bl	gic_init_secure
++1:
++	/* Secondary CPU(s) enter here. The caller has to guarantee that
++	   main CPU has initialized the gic at this point.
++	 */
++	bl	gicr_init_percpu
++
++	mov lr, x28		/* Restore LR */
++#endif
++	ret
++ENDPROC(gic_init)
++
++/* returns the nCPU*8 in xres
++ * uses xreg as a scratch register
++ */
++.macro get_cpu_offset, xres, xreg
++	mrs	\xreg, mpidr_el1
++	lsr \xres, \xreg, #7
++	orr \xres, \xres, \xreg
++	and \xres, \xres, #3
++	lsl \xres, \xres, #3
++.endm
++
++ENTRY(smp_set_cpu_state)
++	/* void smp_set_cpu_state(int state)
++	 * state is passed in x2
++	 */
++	ldr x17, =psci_cpu_state
++	get_cpu_offset x15, x16
++	str x2, [x17, x15]
++	ret
++ENDPROC(smp_set_cpu_state)
++
++ENTRY(lowlevel_init)
++	mov	x29, lr			/* Save LR */
++
++#ifdef CONFIG_ARMV8_MULTIENTRY
++	branch_if_slave x0, 1f
++
++	/* Make sure the main CPU initializes the gic first.
++	   Secondary CPU will spin until primary is done.
++	   Note: it is important that secondary CPU(s) execute more cycles
++	   than main cpu before they attempt to read psci_cpu_state[0]
++	   for the first time. This gives the main CPU the chance the reset
++	   the value upon startup:
++	 */
++	ldr x17, =psci_cpu_state
++	str xzr, [x17]	/* 0: CPU_STATE_NOT_IN_UBOOT */
++	dsb sy
++	isb
++
++	/* enable debugging */
++	msr osdlr_el1, xzr
++	msr oslar_el1, xzr
++	isb
++
++	/* check if cpu0 should behave like a secondary CPU */
++	ldr x17, =psci_cpu0_role
++	ldr x17, [x17]
++	ldr x18, =CPU_ROLE_SECONDARY
++	cmp x17, x18
++	beq 1f
++
++#endif /* CONFIG_ARMV8_MULTIENTRY */
++	bl	gic_init
++
++	/* gic init done, release secondary CPU(s) */
++	mov x16, #CPU_STATE_WAIT_GICD
++	ldr x17, =psci_cpu_state
++	str x16, [x17]
++
++	mov	lr, x29			/* Restore LR */
++	ret
++
++#ifdef CONFIG_ARMV8_MULTIENTRY
++1:
++	/* slave CPU(s) enter here. Make sure they execute more cycles than
++	   the main CPU needs for writing psci_cpu_state[0] before they read
++	   psci_cpu_state[0]
++	*/
++
++	/* set cpu state to 1 */
++	mov x2, #CPU_STATE_WAIT_GICD
++	bl smp_set_cpu_state
++
++	ldr x17, =psci_cpu_state	/* psci_cpu_state[0] is used for main CPU state */
++loop:
++	ldr x16, [x17]
++	cbz x16, loop
++
++	bl gic_init
++
++	/*
++	 * Secondary CPU(s) should wait for main clearing spin table.
++	 * This sync prevent Secondary CPU(s) from observing incorrect
++	 * value of spin table and jumping to wrong place.
++	 */
++	/* set cpu state to 2 */
++	mov x2, #CPU_STATE_WAIT_GIC_IRQ
++	bl smp_set_cpu_state
++
++#if defined(CONFIG_GICV2) || defined(CONFIG_GICV3)
++#ifdef CONFIG_GICV2
++	ldr	x0, =GICC_BASE
++#endif
++	bl	gic_wait_for_interrupt
++#endif
++
++	bl psci_setup_vectors
++	/*
++	 * All slaves will enter EL2 and optionally EL1.
++	 */
++	adr	x4, lowlevel_in_el2
++	ldr	x5, =ES_TO_AARCH64
++	bl	armv8_switch_to_el2
++
++lowlevel_in_el2:
++#ifdef CONFIG_ARMV8_SWITCH_TO_EL1
++	adr	x4, lowlevel_in_el1
++	ldr	x5, =ES_TO_AARCH64
++	bl	armv8_switch_to_el1
++
++lowlevel_in_el1:
++#endif
++
++	/* set cpu state to 3 */
++	mov x2, #CPU_STATE_WAIT_OS_ADDR
++	bl smp_set_cpu_state
++
++secondary_wait_for_OS:
++	wfi
++
++	ldr	x1, =psci_cpu_release_addr
++	get_cpu_offset x15, x16
++	ldr	x0, [x1, x15]
++	cbz	x0, secondary_wait_for_OS
++
++	/* reset CPU release addr */
++	mov x16, #0
++	str x16, [x1, x15]
++
++	/* set CPU state to 4 */
++	mov x2, #CPU_STATE_JUMP_TO_OS
++	bl smp_set_cpu_state
++
++	br	x0			/* branch to the given address */
++#endif /* CONFIG_ARMV8_MULTIENTRY */
++ENDPROC(lowlevel_init)
++
++/* ----------------------------------------------------
++ * Code relocated to secure section below
++ */
++
++#include <asm/secure.h>
++
++.pushsection ._secure.text, "ax"
++
++#define CORTEX_A65AE_CPUPWRCTLR_EL1 S3_0_C15_C2_7
++#define CORTEX_A65AE_CPUPWRCTLR_EL1_CORE_PWRDN_BIT 1
++
++ENTRY(smp_kick_all_cpus_secure)
++	/* Kick secondary cpus up by SGI 0 interrupt */
++#if defined(CONFIG_GICV3)
++	mov	x9, #(1 << 40)
++	msr	ICC_ASGI1R_EL1, x9
++	isb
++#elif defined(CONFIG_GICV2)
++	ldr	x0, =GICD_BASE
++	mov	w9, #0x8000
++	movk	w9, #0x100, lsl #16
++	str	w9, [x0, GICD_SGIR]
++#endif
++	ret
++ENDPROC(smp_kick_all_cpus_secure)
++
++ENTRY(request_thread_pwroff)
++	mrs x0, CORTEX_A65AE_CPUPWRCTLR_EL1
++	orr x0, x0, #CORTEX_A65AE_CPUPWRCTLR_EL1_CORE_PWRDN_BIT
++	msr CORTEX_A65AE_CPUPWRCTLR_EL1, x0
++	isb
++	ret
++ENDPROC(request_thread_pwroff)
++
++ENTRY(gicv3_cpuif_disable)
++    /* Disable legacy interrupt bypass */
++	mrs x10, ICC_SRE_EL3
++	orr x10, x10, #6
++	msr ICC_SRE_EL3, x10
++
++    /* Disable Group0 interrupts */
++	mrs x10, ICC_IGRPEN0_EL1
++	and x10, x10, #~1
++	msr ICC_IGRPEN0_EL1, X10
++
++    /* Disable Group1 Secure and Non-Secure interrupts */
++	mrs x10, ICC_IGRPEN1_EL3
++	and x10, x10, #~3
++	msr ICC_IGRPEN1_EL3, x10
++
++    /* Synchronise accesses to group enable registers */
++    isb
++    /* Add DSB to ensure visibility of System register writes */
++    dsb sy
++
++	/* calculate ReDistributor base for current CPU */
++	ldr	x0, =GICR_BASE
++	mrs	x10, mpidr_el1
++	lsr	x9, x10, #32
++	bfi	x10, x9, #24, #8	/* w10 is aff3:aff2:aff1:aff0 */
++	mov	x9, x0
++1:	ldr	x11, [x9, GICR_TYPER]
++	lsr	x11, x11, #32		/* w11 is aff3:aff2:aff1:aff0 */
++	cmp	w10, w11
++	b.eq	2f
++	add	x9, x9, #(2 << 16)
++	b	1b
++
++2:
++	/* x9: ReDistributor Base Address of Current CPU */
++
++    /*
++     * dsb() already issued previously after clearing the CPU group
++     * enabled, apply below workaround to toggle the "DPG*"
++     * bits of GICR_CTLR register for unblocking event.
++	 * zukimo GIC has revision 4, so errata needs to be applied.
++     */
++
++	/* Apply errata */
++	ldr w10, [x9]
++	orr w10, w10, #0x7000000
++	str w10, [x9]
++	ldr w10, [x9]
++	and w10, w10, #~0x7000000
++	str w10, [x9]
++
++    /* Mark the connected core as asleep */
++	mov	w10, #0x2
++	ldr	w11, [x9, GICR_WAKER]
++	orr	w11, w11, w10		/* Clear ProcessorSleep */
++	str	w11, [x9, GICR_WAKER]
++	dsb	st
++	isb
++3:	ldr	w10, [x9, GICR_WAKER]
++	tbz	w10, #2, 3b		/* Wait for children to fall asleep */
++
++	ret
++ENDPROC(gicv3_cpuif_disable)
++
++ENTRY(gicv3_rdistif_off)
++	/* calculate ReDistributor base for current CPU */
++	ldr	x0, =GICR_BASE
++	mrs	x10, mpidr_el1
++	lsr	x9, x10, #32
++	bfi	x10, x9, #24, #8	/* w10 is aff3:aff2:aff1:aff0 */
++	mov	x9, x0
++1:	ldr	x11, [x9, GICR_TYPER]
++	lsr	x11, x11, #32		/* w11 is aff3:aff2:aff1:aff0 */
++	cmp	w10, w11
++	b.eq	2f
++	add	x9, x9, #(2 << 16)
++	b	1b
++
++2:
++	/* Wait until group not transitioning */
++	/* x9: ReDistributor Base Address of Current CPU */
++	mov w10, #0xc
++3:	ldr w11, [x9, GICR_PWRR]
++	and w11, w11, #0xc
++	cbz w11, 4f
++	cmp w11, w10
++	b.ne 3b
++
++4:
++	/* Power off redistributor */
++	mov w10, #1
++	str w10, [x9, GICR_PWRR]
++
++	/*
++	 * If this is the last man, turning this redistributor frame off will
++	 * result in the group itself being powered off and RDGPD = 1.
++	 * In that case, wait as long as it's in transition, or has aborted
++	 * the transition altogether for any reason.
++	 */
++	ldr w11, [x9, GICR_PWRR]
++	and w11, w11, #4
++	b.eq 6f
++	/* Wait until group not transitioning */
++	mov w10, #0xc
++5:	ldr w11, [x9, GICR_PWRR]
++	and w11, w11, #0xc
++	cbz w11, 6f
++	cmp w11, w10
++	b.ne 5b
++
++6:
++	ret
++ENDPROC(gicv3_rdistif_off)
++.popsection
+-- 
+2.34.1
+

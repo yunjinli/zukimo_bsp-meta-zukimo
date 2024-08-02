@@ -1,0 +1,474 @@
+From d24b53542d24c2c67855be28b6f00000903636ef Mon Sep 17 00:00:00 2001
+From: Ralph Hempel <ralph.hempel@dreamchip.de>
+Date: Fri, 17 Nov 2023 15:38:09 +0100
+Subject: [PATCH 04/12] zukimo: add devicetree
+
+Upstream-Status: Pending
+
+---
+ arch/arm/cpu/armv8/u-boot.lds |   3 +-
+ arch/arm/dts/zukimo.dts       | 236 ++++++++++++++++++++++++++++++++++
+ arch/arm/dts/zukimo_haps.dts  | 194 ++++++++++++++++++++++++++++
+ 3 files changed, 431 insertions(+), 2 deletions(-)
+ create mode 100644 arch/arm/dts/zukimo.dts
+ create mode 100644 arch/arm/dts/zukimo_haps.dts
+
+diff --git a/arch/arm/cpu/armv8/u-boot.lds b/arch/arm/cpu/armv8/u-boot.lds
+index fb6a30c922..43a80a460c 100644
+--- a/arch/arm/cpu/armv8/u-boot.lds
++++ b/arch/arm/cpu/armv8/u-boot.lds
+@@ -71,8 +71,7 @@ SECTIONS
+ 		*(._secure.data)
+ 	}
+
+-	.secure_stack ALIGN(ADDR(.secure_data) + SIZEOF(.secure_data),
+-			    CONSTANT(COMMONPAGESIZE)) (NOLOAD) :
++	.secure_stack ADDR(.secure_data) + SIZEOF(.secure_data) (NOLOAD) :
+ #ifdef __ARMV8_PSCI_STACK_IN_RAM
+ 		AT(ADDR(.secure_stack))
+ #else
+diff --git a/arch/arm/dts/zukimo.dts b/arch/arm/dts/zukimo.dts
+new file mode 100644
+index 0000000000..eb3198e75f
+--- /dev/null
++++ b/arch/arm/dts/zukimo.dts
+@@ -0,0 +1,236 @@
++ /*
++ * (C) Copyright 2023,
++ * Dream Chip Technologies
++ *
++ * SPDX-License-Identifier: GPL-2.0+
++ */
++
++/dts-v1/;
++
++#include <dt-bindings/interrupt-controller/arm-gic.h>
++#include <dt-bindings/gpio/gpio.h>
++
++/ {
++    model = "Dream Chip Technologies Zukimo";
++    compatible = "dct,zukimo";
++    interrupt-parent = <&gic>;
++    #address-cells = <2>;
++    #size-cells = <2>;
++
++    aliases {
++        serial0 = &uart0;
++        serial1 = &uart1;
++    };
++
++    chosen {
++        stdout-path = "serial0:115200n8";
++    };
++
++    memory@80000000 {
++        device_type = "memory";
++        reg = <0x00 0x80000000 0x00 0x80000000>,
++              <0x08 0x00000000 0x01 0x80000000>;
++    };
++
++    reserved-memory {
++        #address-cells = <2>;
++        #size-cells = <2>;
++        ranges;
++
++        sram: sram@0x10000000 {
++            reg = <0x00 0x10000000 0x00 0x00080000>;
++        };
++    };
++
++    uart_clk: uart_clk {
++        clock-output-names = "clk_baud_uart";
++        clock-frequency = <25000000>;
++        #clock-cells = <0>;
++        compatible = "fixed-clock";
++    };
++
++    sdm_clk: sdm_clk {
++        clock-output-names = "clk200mhz";
++        clock-frequency = <200000000>;
++        #clock-cells = <0>;
++        compatible = "fixed-clock";
++    };
++
++    apb_pclk: apb_pclk {
++        clock-output-names = "clk_noc_apb";
++        clock-frequency = <250000000>;
++        #clock-cells = <0>;
++        compatible = "fixed-clock";
++    };
++
++    gem_clk: gem_clk {
++        clock-output-names = "clk_gem125";
++        clock-frequency = <125000000>;
++        #clock-cells = <0>;
++        compatible = "fixed-clock";
++    };
++
++    a65_clk: a65_clk {
++        clock-output-names = "clk1000mhz";
++        clock-frequency = <1000000000>;
++        #clock-cells = <0>;
++        compatible = "fixed-clock";
++    };
++
++    cpus {
++        #address-cells = <2>;
++        #size-cells = <0>;
++
++        cpu-map {
++            cluster0 {
++                core0 {
++                    thread0 {
++                        cpu = <&A65AE_0>;
++                    };
++                    thread1 {
++                        cpu = <&A65AE_1>;
++                    };
++                };
++                core1 {
++                    thread0 {
++                        cpu = <&A65AE_2>;
++                    };
++                    thread1 {
++                        cpu = <&A65AE_3>;
++                    };
++                };
++            };
++        };
++
++        A65AE_0: cpu@0 {
++            device_type = "cpu";
++            compatible = "arm,cortex-a65", "arm,armv8";
++            reg = <0 0x0>;
++            enable-method = "psci";
++            clocks = <&a65_clk>;
++        };
++
++        A65AE_1: cpu@1 {
++            device_type = "cpu";
++            compatible = "arm,cortex-a65", "arm,armv8";
++            reg = <0 0x1>;
++        };
++
++        A65AE_2: cpu@100 {
++            device_type = "cpu";
++            compatible = "arm,cortex-a65", "arm,armv8";
++            reg = <0 0x100>;
++        };
++
++        A65AE_3: cpu@101 {
++            device_type = "cpu";
++            compatible = "arm,cortex-a65", "arm,armv8";
++            reg = <0 0x101>;
++        };
++    };
++
++    ipc_gpio0: ipc_gpio {
++        compatible = "dct,dct_ipc_gpio";
++        gpio-controller;
++        #gpio-cells = <2>;
++        ngpios = <32>;
++        status = "okay";
++    };
++
++    sd_card_supply0: sd_card_supply {
++        compatible = "regulator-gpio";
++        enable-active-high;
++        enable-gpios = <&ipc_gpio0 14 GPIO_ACTIVE_HIGH>; /* used for enable disable */
++        regulator-name = "sd-card-power-supply";
++        regulator-max-microvolt = <3300000>;
++        regulator-min-microvolt = <0>;
++        states = <3300000 1>, <0 0>;
++    };
++
++    timer {
++        compatible = "arm,armv8-timer";
++        interrupts = <GIC_PPI 13 (GIC_CPU_MASK_SIMPLE(4) | IRQ_TYPE_LEVEL_LOW)>, /* Physical Secure */
++            <GIC_PPI 14 (GIC_CPU_MASK_SIMPLE(4) | IRQ_TYPE_LEVEL_LOW)>, /* Physical Non-Secure */
++            <GIC_PPI 11 (GIC_CPU_MASK_SIMPLE(4) | IRQ_TYPE_LEVEL_LOW)>, /* Virtual */
++            <GIC_PPI 10 (GIC_CPU_MASK_SIMPLE(4) | IRQ_TYPE_LEVEL_LOW)>; /* Hypervisor */
++    };
++
++    pmu {
++        compatible = "arm,armv8-pmuv3";
++        interrupts = <GIC_PPI 7 IRQ_TYPE_LEVEL_HIGH>;
++    };
++
++    soc: soc {
++        compatible = "simple-bus";
++        #address-cells = <2>;
++        #size-cells = <2>;
++        ranges;
++
++        gic: interrupt-controller@11000000 {
++            compatible = "arm,gic-v3";
++            #interrupt-cells = <3>;
++            interrupt-controller;
++            reg = <0x0 0x11000000 0 0x10000>,    // GICD
++                  <0x0 0x11040000 0 0x080000>;    // GICR
++            interrupts = <GIC_PPI 9 IRQ_TYPE_LEVEL_LOW>;
++         };
++
++        uart0: serial@22080000 {
++            compatible = "dct,dct_uart", "dct_uart";
++            reg = <0x00 0x22080000 0x00 0x100>;
++            interrupts = <GIC_SPI 12 IRQ_TYPE_LEVEL_HIGH>;
++            clocks = <&uart_clk>;
++            clock-names = "uart_clk";
++            u-boot,dm-pre-reloc;
++            status = "okay";
++        };
++
++        uart1: serial@22090000 {
++            compatible = "dct,dct_uart", "dct_uart";
++            reg = <0x00 0x22090000 0x00 0x100>;
++            interrupts = <GIC_SPI 13 IRQ_TYPE_LEVEL_HIGH>;
++            clocks = <&uart_clk>;
++            clock-names = "uart_clk";
++            status = "okay";
++        };
++        sdhc0: mmc@03720000 {
++            compatible = "dct,dct,dct_sdhc_cadence", "dct,dct_sdhc_cadence";
++            reg = <0x0 0x03720000 0x00 0x1000>;
++            clocks = <&sdm_clk>;
++            sdhci-caps-mask = <0x00000007 0x00000000>; // set SDR50, SDR104 and
++            sdhci-caps      = <0x00000000 0x00000000>; // DDR50 capability to 0
++            vmmc-supply = <&sd_card_supply0>;
++            bus-width     = <4>;
++            cap-sd-highspeed;
++            cap-mmc-highspeed;
++            sd-uhs-sdr12;
++            sd-uhs-sdr25;
++            disable-wp;
++            status = "okay";
++        };
++
++        gem0: eth@029000000 {
++            compatible = "cdns,zukimo-macb";
++            reg = <0x00 0x029000000 0x00 0x1000>;
++            #address-cells = <1>;
++            #size-cells = <0>;
++            status = "okay";
++            clock-names = "apb_pclk"; // , "tx_clk";
++            clocks = <&apb_pclk>; // , <&gem_clk>;
++
++            phy-mode = "rgmii-id";
++            phy-handle = <&ethphy0>;
++
++            // settings for cdns,macb
++            adi,rx-internal-delay-ps = <2400>;
++            adi,tx-internal-delay-ps = <2000>;
++
++            ethphy0: ethernet-phy@0 {
++                // settings for cdns,gem
++                adi,rx-internal-delay-ps = <2000>;
++                adi,tx-internal-delay-ps = <2000>;
++                reg = <0>;
++            };
++        };
++    };
++};
+diff --git a/arch/arm/dts/zukimo_haps.dts b/arch/arm/dts/zukimo_haps.dts
+new file mode 100644
+index 0000000000..be0b43cb67
+--- /dev/null
++++ b/arch/arm/dts/zukimo_haps.dts
+@@ -0,0 +1,194 @@
++ /*
++ * (C) Copyright 2023,
++ * Dream Chip Technologies
++ *
++ * SPDX-License-Identifier: GPL-2.0+
++ */
++
++/dts-v1/;
++
++#include <dt-bindings/interrupt-controller/arm-gic.h>
++#include <dt-bindings/gpio/gpio.h>
++
++/ {
++	model = "Dream Chip Technologies Zukimo";
++	compatible = "dct,zukimo";
++	interrupt-parent = <&gic>;
++    #address-cells = <2>;
++    #size-cells = <2>;
++
++	aliases {
++        serial0 = &uart0;
++        serial1 = &uart1;
++	};
++
++	chosen {
++        stdout-path = "serial0:115200n8";
++    };
++
++	memory@80000000 {
++		device_type = "memory";
++		reg = <0x00 0x80000000 0x00 0x04000000>;
++	};
++
++    reserved-memory {
++        #address-cells = <2>;
++        #size-cells = <2>;
++        ranges;
++
++        sram: sram@0x10000000 {
++            reg = <0x00 0x10000000 0x00 0x00080000>;
++        };
++    };
++
++    apb_clk: apb_clk {
++        clock-output-names = "clk125mhz";
++        clock-frequency = <25000000>;
++        #clock-cells = <0>;
++        compatible = "fixed-clock";
++    };
++
++	a65_clk: a65_clk {
++		clock-output-names = "clk1000mhz";
++		clock-frequency = <25000000>;
++		#clock-cells = <0>;
++		compatible = "fixed-clock";
++	};
++
++	cpus {
++		#address-cells = <2>;
++		#size-cells = <0>;
++
++		cpu-map {
++			cluster0 {
++				core0 {
++                    thread0 {
++                        cpu = <&A65AE_0>;
++                    };
++                    thread1 {
++                        cpu = <&A65AE_1>;
++                    };
++                };
++				core1 {
++                    thread0 {
++                        cpu = <&A65AE_2>;
++                    };
++                    thread1 {
++                        cpu = <&A65AE_3>;
++                    };
++                };
++            };
++		};
++
++        A65AE_0: cpu@0 {
++			device_type = "cpu";
++			compatible = "arm,cortex-a65", "arm,armv8";
++			reg = <0 0x0>;
++			enable-method = "psci";
++			clocks = <&a65_clk>;
++		};
++
++        A65AE_1: cpu@1 {
++			device_type = "cpu";
++			compatible = "arm,cortex-a65", "arm,armv8";
++			reg = <0 0x1>;
++		};
++
++        A65AE_2: cpu@100 {
++			device_type = "cpu";
++			compatible = "arm,cortex-a65", "arm,armv8";
++			reg = <0 0x100>;
++		};
++
++        A65AE_3: cpu@101 {
++			device_type = "cpu";
++			compatible = "arm,cortex-a65", "arm,armv8";
++			reg = <0 0x101>;
++		};
++    };
++
++	ipc_gpio0: ipc_gpio {
++		compatible = "dct,dct_ipc_gpio";
++		gpio-controller;
++		#gpio-cells = <2>;
++		ngpios = <32>;
++		status = "okay";
++    };
++
++    sd_card_supply0: sd_card_supply {
++        compatible = "regulator-gpio";
++        enable-active-high;
++        enable-gpios = <&ipc_gpio0 14 GPIO_ACTIVE_HIGH>; /* used for enable disable */
++        regulator-name = "sd-card-power-supply";
++        regulator-max-microvolt = <3300000>;
++        regulator-min-microvolt = <0>;
++        states = <3300000 1>, <0 0>;
++    };
++
++	timer {
++		compatible = "arm,armv8-timer";
++		interrupts = <GIC_PPI 13 (GIC_CPU_MASK_SIMPLE(4) | IRQ_TYPE_LEVEL_LOW)>, /* Physical Secure */
++			<GIC_PPI 14 (GIC_CPU_MASK_SIMPLE(4) | IRQ_TYPE_LEVEL_LOW)>, /* Physical Non-Secure */
++			<GIC_PPI 11 (GIC_CPU_MASK_SIMPLE(4) | IRQ_TYPE_LEVEL_LOW)>, /* Virtual */
++			<GIC_PPI 10 (GIC_CPU_MASK_SIMPLE(4) | IRQ_TYPE_LEVEL_LOW)>; /* Hypervisor */
++	};
++
++	pmu {
++		compatible = "arm,armv8-pmuv3";
++		interrupts = <GIC_PPI 7 IRQ_TYPE_LEVEL_HIGH>;
++	};
++
++	soc: soc {
++		compatible = "simple-bus";
++		#address-cells = <2>;
++		#size-cells = <2>;
++		ranges;
++
++        gic: interrupt-controller@11000000 {
++            compatible = "arm,gic-v3";
++            #interrupt-cells = <3>;
++            interrupt-controller;
++            reg = <0x0 0x11000000 0 0x10000>,	// GICD
++                  <0x0 0x11040000 0 0x080000>;	// GICR
++            interrupts = <GIC_PPI 9 IRQ_TYPE_LEVEL_LOW>;
++         };
++
++        uart0: serial@22080000 {
++            compatible = "dct,dct_uart", "dct_uart";
++            reg = <0x00 0x22080000 0x00 0x100>;
++            interrupts = <GIC_SPI 143 IRQ_TYPE_LEVEL_HIGH>;
++            clocks = <&apb_clk>;
++            clock-names = "uart_clk";
++            u-boot,dm-pre-reloc;
++            status = "okay";
++        };
++
++        uart1: serial@22090000 {
++            compatible = "dct,dct_uart", "dct_uart";
++            reg = <0x00 0x22090000 0x00 0x100>;
++            interrupts = <GIC_SPI 144 IRQ_TYPE_LEVEL_HIGH>;
++            clocks = <&apb_clk>;
++            clock-names = "uart_clk";
++            status = "okay";
++        };
++        sdhc0: mmc@03720000 {
++            compatible = "dct,dct_sdhc", "dct_sdhc";
++            reg = <0x0 0x03720000 0x00 0x1000>;
++            /* interrupts = <GIC_SPI ??  IRQ_TYPE_LEVEL_HIGH>;  // may IRQs not supported by U-BOOT */
++            vmmc-supply = <&sd_card_supply0>;
++            clock-frequency = <25000000>;
++            bus-width     = <4>;
++            max-frequency = <6000000>;
++            min-frequency = <400000>;
++            cap-sd-highspeed;
++            cap-mmc-highspeed;
++            sd-uhs-sdr12;
++            sd-uhs-sdr25;
++            /* sd-uhs-sdr50; */
++            /* sd-uhs-sdr104; */
++            /* use-dma; */
++            /* no-1-8-v; */
++            status = "okay";
++        };
++	};
++};
+--
+2.34.1
+

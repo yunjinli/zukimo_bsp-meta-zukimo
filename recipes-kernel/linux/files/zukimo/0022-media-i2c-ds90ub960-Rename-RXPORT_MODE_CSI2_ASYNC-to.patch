@@ -1,0 +1,119 @@
+From 4b9f30a9bee1bfe22807a7f1d7b40fce7bdd2f94 Mon Sep 17 00:00:00 2001
+From: Tomi Valkeinen <tomi.valkeinen@ideasonboard.com>
+Date: Mon, 31 Jul 2023 16:24:43 +0300
+Subject: [PATCH 22/34] media: i2c: ds90ub960: Rename RXPORT_MODE_CSI2_ASYNC to
+ RXPORT_MODE_CSI2_NONSYNC
+
+Upstream-Status: Pending
+
+FPD-Link has an operating mode that used to be called "asynchronous" in
+the hardware documentation, but that has been changed to non-synchronous
+already quite a while back. The ub960 driver still had one instance of
+the old naming, so let's rename it.
+
+Signed-off-by: Tomi Valkeinen <tomi.valkeinen@ideasonboard.com>
+Reviewed-by: Laurent Pinchart <laurent.pinchart@ideasonboard.com>
+Reviewed-by: Andy Shevchenko <andriy.shevchenko@linux.intel.com>
+---
+ drivers/media/i2c/ds90ub960.c | 22 +++++++++++-----------
+ 1 file changed, 11 insertions(+), 11 deletions(-)
+
+diff --git a/drivers/media/i2c/ds90ub960.c b/drivers/media/i2c/ds90ub960.c
+index 25a7e61fc53c..216e847018fd 100644
+--- a/drivers/media/i2c/ds90ub960.c
++++ b/drivers/media/i2c/ds90ub960.c
+@@ -416,8 +416,8 @@ enum ub960_rxport_mode {
+ 	RXPORT_MODE_RAW12_HF = 1,
+ 	RXPORT_MODE_RAW12_LF = 2,
+ 	RXPORT_MODE_CSI2_SYNC = 3,
+-	RXPORT_MODE_CSI2_ASYNC = 4,
+-	RXPORT_MODE_LAST = RXPORT_MODE_CSI2_ASYNC,
++	RXPORT_MODE_CSI2_NONSYNC = 4,
++	RXPORT_MODE_LAST = RXPORT_MODE_CSI2_NONSYNC,
+ };
+ 
+ enum ub960_rxport_cdr {
+@@ -1610,7 +1610,7 @@ static unsigned long ub960_calc_bc_clk_rate_ub960(struct ub960_data *priv,
+ 		div = 1;
+ 		break;
+ 
+-	case RXPORT_MODE_CSI2_ASYNC:
++	case RXPORT_MODE_CSI2_NONSYNC:
+ 		mult = 2;
+ 		div = 5;
+ 		break;
+@@ -1634,7 +1634,7 @@ static unsigned long ub960_calc_bc_clk_rate_ub9702(struct ub960_data *priv,
+ 	case RXPORT_MODE_CSI2_SYNC:
+ 		return 47187500;
+ 
+-	case RXPORT_MODE_CSI2_ASYNC:
++	case RXPORT_MODE_CSI2_NONSYNC:
+ 		return 9437500;
+ 
+ 	default:
+@@ -1841,7 +1841,7 @@ static void ub960_init_rx_port_ub960(struct ub960_data *priv,
+ 		bc_freq_val = 0;
+ 		break;
+ 
+-	case RXPORT_MODE_CSI2_ASYNC:
++	case RXPORT_MODE_CSI2_NONSYNC:
+ 		bc_freq_val = 2;
+ 		break;
+ 
+@@ -1879,7 +1879,7 @@ static void ub960_init_rx_port_ub960(struct ub960_data *priv,
+ 		return;
+ 
+ 	case RXPORT_MODE_CSI2_SYNC:
+-	case RXPORT_MODE_CSI2_ASYNC:
++	case RXPORT_MODE_CSI2_NONSYNC:
+ 		/* CSI-2 Mode (DS90UB953-Q1 compatible) */
+ 		ub960_rxport_update_bits(priv, nport, UB960_RR_PORT_CONFIG, 0x3,
+ 					 0x0);
+@@ -1939,7 +1939,7 @@ static void ub960_init_rx_port_ub9702_fpd3(struct ub960_data *priv,
+ 		fpd_func_mode = 2;
+ 		break;
+ 
+-	case RXPORT_MODE_CSI2_ASYNC:
++	case RXPORT_MODE_CSI2_NONSYNC:
+ 		bc_freq_val = 2;
+ 		fpd_func_mode = 2;
+ 		break;
+@@ -2033,7 +2033,7 @@ static void ub960_init_rx_port_ub9702_fpd4(struct ub960_data *priv,
+ 		bc_freq_val = 6;
+ 		break;
+ 
+-	case RXPORT_MODE_CSI2_ASYNC:
++	case RXPORT_MODE_CSI2_NONSYNC:
+ 		bc_freq_val = 2;
+ 		break;
+ 
+@@ -2099,7 +2099,7 @@ static void ub960_init_rx_port_ub9702(struct ub960_data *priv,
+ 		return;
+ 
+ 	case RXPORT_MODE_CSI2_SYNC:
+-	case RXPORT_MODE_CSI2_ASYNC:
++	case RXPORT_MODE_CSI2_NONSYNC:
+ 
+ 		break;
+ 	}
+@@ -2445,7 +2445,7 @@ static int ub960_configure_ports_for_streaming(struct ub960_data *priv,
+ 
+ 		/* For the rest, we are only interested in parallel busses */
+ 		if (rxport->rx_mode == RXPORT_MODE_CSI2_SYNC ||
+-		    rxport->rx_mode == RXPORT_MODE_CSI2_ASYNC)
++		    rxport->rx_mode == RXPORT_MODE_CSI2_NONSYNC)
+ 			continue;
+ 
+ 		if (rx_data[nport].num_streams > 2)
+@@ -2509,7 +2509,7 @@ static int ub960_configure_ports_for_streaming(struct ub960_data *priv,
+ 			break;
+ 
+ 		case RXPORT_MODE_CSI2_SYNC:
+-		case RXPORT_MODE_CSI2_ASYNC:
++		case RXPORT_MODE_CSI2_NONSYNC:
+ 			if (!priv->hw_data->is_ub9702) {
+ 				/* Map all VCs from this port to the same VC */
+ 				ub960_rxport_write(priv, nport, UB960_RR_CSI_VC_MAP,
+-- 
+2.34.1
+

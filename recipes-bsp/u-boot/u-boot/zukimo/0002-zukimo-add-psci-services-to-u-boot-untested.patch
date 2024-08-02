@@ -1,0 +1,556 @@
+From e964b76fc4953875eaeae8d5d6129fe00d46f998 Mon Sep 17 00:00:00 2001
+From: Stefan Stuerke <stefan.stuerke@dreamchip.de>
+Date: Tue, 14 Mar 2023 15:47:27 +0100
+Subject: [PATCH 02/12] zukimo: add psci services to u-boot (untested)
+
+Upstream-Status: Pending
+
+---
+ arch/arm/Kconfig                   |  19 +-
+ arch/arm/Makefile                  |   1 +
+ arch/arm/cpu/armv8/cpu.c           |   2 +-
+ arch/arm/mach-zukimo/Kconfig       |  18 ++
+ arch/arm/mach-zukimo/Makefile      |   5 +
+ arch/arm/mach-zukimo/zukimo_psci.c | 417 +++++++++++++++++++++++++++++
+ 6 files changed, 453 insertions(+), 9 deletions(-)
+ create mode 100644 arch/arm/mach-zukimo/Kconfig
+ create mode 100644 arch/arm/mach-zukimo/Makefile
+ create mode 100644 arch/arm/mach-zukimo/zukimo_psci.c
+
+diff --git a/arch/arm/Kconfig b/arch/arm/Kconfig
+index 9550622ffd..0b8237e4bb 100644
+--- a/arch/arm/Kconfig
++++ b/arch/arm/Kconfig
+@@ -1308,13 +1308,6 @@ config TARGET_CORSTONE1000
+ 	select PL01X_SERIAL
+ 	select DM
+ 
+-config TARGET_ZUKIMO
+-	bool "Support Dream Chip's Zukimo board"
+-	select ARM64
+-	select GICV3
+-	select GPIO_EXTRA_HEADER
+-	select DCT_SERIAL
+-
+ config TARGET_TOTAL_COMPUTE
+ 	bool "Support Total Compute Platform"
+ 	select ARM64
+@@ -2011,6 +2004,15 @@ config ARCH_ASPEED
+ 	select OF_CONTROL
+ 	imply CMD_DM
+ 
++config ARCH_ZUKIMO
++	bool "Support DCT Zukimo Platform"
++	select ARM64
++	select GICV3
++	select ARMV8_MULTIENTRY
++	select DM
++	select DM_SERIAL
++	select OF_CONTROL
++
+ config TARGET_DURIAN
+ 	bool "Support Phytium Durian Platform"
+ 	select ARM64
+@@ -2264,6 +2266,8 @@ source "arch/arm/mach-nexell/Kconfig"
+ 
+ source "arch/arm/mach-npcm/Kconfig"
+ 
++source "arch/arm/mach-zukimo/Kconfig"
++
+ source "board/armltd/total_compute/Kconfig"
+ source "board/armltd/corstone1000/Kconfig"
+ source "board/bosch/shc/Kconfig"
+@@ -2272,7 +2276,6 @@ source "board/Marvell/octeontx/Kconfig"
+ source "board/Marvell/octeontx2/Kconfig"
+ source "board/armltd/vexpress/Kconfig"
+ source "board/armltd/vexpress64/Kconfig"
+-source "board/dct/zukimo/Kconfig"
+ source "board/cortina/presidio-asic/Kconfig"
+ source "board/broadcom/bcmns3/Kconfig"
+ source "board/cavium/thunderx/Kconfig"
+diff --git a/arch/arm/Makefile b/arch/arm/Makefile
+index ac602aed9c..a90b681c43 100644
+--- a/arch/arm/Makefile
++++ b/arch/arm/Makefile
+@@ -89,6 +89,7 @@ machine-$(CONFIG_ARCH_OCTEONTX2)	+= octeontx2
+ machine-$(CONFIG_ARCH_UNIPHIER)		+= uniphier
+ machine-$(CONFIG_ARCH_VERSAL)		+= versal
+ machine-$(CONFIG_ARCH_VERSAL_NET)	+= versal-net
++machine-$(CONFIG_ARCH_ZUKIMO)		+= zukimo
+ machine-$(CONFIG_ARCH_ZYNQ)		+= zynq
+ machine-$(CONFIG_ARCH_ZYNQMP)		+= zynqmp
+ machine-$(CONFIG_ARCH_ZYNQMP_R5)	+= zynqmp-r5
+diff --git a/arch/arm/cpu/armv8/cpu.c b/arch/arm/cpu/armv8/cpu.c
+index db5d460eb4..34a8833def 100644
+--- a/arch/arm/cpu/armv8/cpu.c
++++ b/arch/arm/cpu/armv8/cpu.c
+@@ -65,7 +65,7 @@ int cleanup_before_linux(void)
+ }
+ 
+ #ifdef CONFIG_ARMV8_PSCI
+-static void relocate_secure_section(void)
++void relocate_secure_section(void)
+ {
+ #ifdef CONFIG_ARMV8_SECURE_BASE
+ 	size_t sz = __secure_end - __secure_start;
+diff --git a/arch/arm/mach-zukimo/Kconfig b/arch/arm/mach-zukimo/Kconfig
+new file mode 100644
+index 0000000000..3d2c169833
+--- /dev/null
++++ b/arch/arm/mach-zukimo/Kconfig
+@@ -0,0 +1,18 @@
++if ARCH_ZUKIMO
++
++choice
++	prompt "DCT Zukimo board select"
++	default TARGET_ZUKIMO
++
++config TARGET_ZUKIMO
++	bool "Dream Chip Technologie's Zukimo board"
++	select DCT_SERIAL
++	select SYS_HAS_ARMV8_SECURE_BASE
++
++endchoice
++
++if TARGET_ZUKIMO
++source "board/dct/zukimo/Kconfig"
++endif
++
++endif
+diff --git a/arch/arm/mach-zukimo/Makefile b/arch/arm/mach-zukimo/Makefile
+new file mode 100644
+index 0000000000..dffd4a2719
+--- /dev/null
++++ b/arch/arm/mach-zukimo/Makefile
+@@ -0,0 +1,5 @@
++#
++# SPDX-License-Identifier:	GPL-2.0+
++#
++
++obj-$(CONFIG_ARMV8_PSCI)	+= zukimo_psci.o
+diff --git a/arch/arm/mach-zukimo/zukimo_psci.c b/arch/arm/mach-zukimo/zukimo_psci.c
+new file mode 100644
+index 0000000000..431332035c
+--- /dev/null
++++ b/arch/arm/mach-zukimo/zukimo_psci.c
+@@ -0,0 +1,417 @@
++/*
++ * Copyright (C) 2023 Dream Chip Technologies
++ *
++ * This file implements basic PSCI support for Dream Chip Technologies Zukimo architecture
++ *
++ * SPDX-License-Identifier:	GPL-2.0
++ */
++
++#include <common.h>
++#include <asm/io.h>
++#include <asm/psci.h>
++#include <asm/secure.h>
++#include <asm/system.h>
++#include <debug_uart.h>
++
++//#define DEBUG_PSCI 1
++#if defined(CONFIG_DEBUG_UART) && defined(DEBUG_PSCI)
++/* Warning: using the printascii functions is not safe since they are relying
++ * on code that is not linked into the secure section. Thus it is not guaranteed
++ * that the code is available/intact when the OS calls into the the psci functions.
++ * Also the printascii functions rely on the debug uart port to be configured and
++ * the pads to be setup correctly. Should the OS use these peripherals differently,
++ * things might go wrong.
++ * However, as of writing this comment, debugging the psci_cpu_on_64, worked very well.
++ * YMMV.
++ */
++#define psci_debug() ({ \
++	printascii(__func__); \
++	printascii("["); printascii(__stringify(__LINE__)); printascii("]\n"); \
++})
++#define psci_ascii_out	printascii
++#define psci_hex_out8	printhex8
++#define psci_hex_out2	printhex2
++#define psci_dec_out	printdec
++#else
++#define psci_debug()
++#define psci_ascii_out(s)
++#define psci_hex_out8(i)
++#define psci_hex_out2(i)
++#define psci_dec_out(i)
++#endif
++
++#define MPIDR_AFF0			GENMASK(7, 0)
++#define MPIDR_AFF1			GENMASK(10, 8)
++
++/* some lowlevel function prototypes */
++void smp_kick_all_cpus_secure(void);
++void request_thread_pwroff(void);
++void gicv3_cpuif_disable(void);
++void gicv3_rdistif_off(void);
++
++__secure static s32 do_cpu_on_power_on(const u32 cpu)
++{
++	// TODO: add your implementation here
++
++	return ARM_PSCI_RET_SUCCESS;
++}
++
++__secure static s32 do_cpu_on_power_off(const u32 cpu)
++{
++	// TODO: add your implementation here
++
++	return ARM_PSCI_RET_SUCCESS;
++}
++
++__secure static s32 do_system_reset(void)
++{
++	// TODO: add your implementation here
++
++	return ARM_PSCI_RET_SUCCESS;
++}
++
++__secure static s32 do_system_off(void)
++{
++	// TODO: add your implementation here
++
++	return ARM_PSCI_RET_SUCCESS;
++}
++
++/*
++ * Helper code
++ */
++static u8 psci_state[CONFIG_ARMV8_PSCI_NR_CPUS] __secure_data = {
++	PSCI_AFFINITY_LEVEL_ON,
++	PSCI_AFFINITY_LEVEL_OFF,
++	PSCI_AFFINITY_LEVEL_OFF,
++	PSCI_AFFINITY_LEVEL_OFF
++};
++
++u64 psci_cpu_release_addr[CONFIG_ARMV8_PSCI_NR_CPUS] __secure_data = { 0 };
++u64 psci_cpu0_role __secure_data = CPU_ROLE_MAIN;
++
++volatile u64 psci_cpu_state[CONFIG_ARMV8_PSCI_NR_CPUS] __section("._secure.uninitialized");
++
++__secure static void psci_set_state(int cpu, u8 state)
++{
++	psci_state[cpu] = state;
++	dsb();
++	isb();
++}
++
++__secure static s32 psci_cpu_on_validate_mpidr(u64 mpidr, u32 *cpu)
++{
++	u32 core;
++	u32 thread;
++
++	if (mpidr & ~(MPIDR_AFF0 | MPIDR_AFF1))
++		return ARM_PSCI_RET_INVAL;
++
++	core = ((mpidr & MPIDR_AFF1) >> 8);
++	thread = (mpidr & MPIDR_AFF0);
++
++	*cpu = core * 2 + thread;
++
++	if (*cpu >= CONFIG_ARMV8_PSCI_NR_CPUS)
++		return ARM_PSCI_RET_INVAL;
++
++	if (psci_state[*cpu] == PSCI_AFFINITY_LEVEL_ON)
++		return ARM_PSCI_RET_ALREADY_ON;
++
++	if (psci_state[*cpu] == PSCI_AFFINITY_LEVEL_ON_PENDING)
++		return ARM_PSCI_RET_ON_PENDING;
++
++	return ARM_PSCI_RET_SUCCESS;
++}
++
++__secure static void psci_cpu_on_write_entry_point(const u32 cpu, u64 entry_point)
++{
++	/* Trampoline target */
++	psci_cpu_release_addr[cpu] = entry_point;
++	dsb();
++	isb();
++}
++
++
++/*
++ * Common PSCI code
++ */
++
++__secure void psci_arch_init(void)
++{
++	psci_debug();
++
++	for (size_t i=0; i<CONFIG_ARMV8_PSCI_NR_CPUS; i++) {
++		psci_cpu_release_addr[i] = 0ull;
++	}
++}
++
++__secure u32 psci_version(void)
++{
++	psci_debug();
++	return ARM_PSCI_VER_1_0;
++}
++
++__secure static s32 psci_wait_for_secondary_cpu_state(u32 cpu, uint64_t state, uint64_t timeout)
++{
++	volatile u64 *cpuState = &psci_cpu_state[0];
++	uint64_t waitCount = 0;
++
++	while (cpuState[cpu] < state) {
++		if (waitCount++ > timeout) {
++			return ARM_PSCI_RET_INTERNAL_FAILURE;
++		}
++	}
++
++	return ARM_PSCI_RET_SUCCESS;
++}
++
++/*
++ * 64bit PSCI code
++ */
++
++#define SECONDARY_CPU_TIMEOUT	0x1000
++
++__secure s32 psci_cpu_on_64(u32 __always_unused function_id, u64 mpidr, u64 entry_point_address, u64 context_id)
++{
++	u32 cpu = 0;
++	s32 ret;
++
++	/*cpuState:
++	 * 0/CPU_STATE_NOT_IN_UBOOT: outside of U-Boot (either in reset state or in OS)
++	 * 1/CPU_STATE_WAIT_GICD:    waiting for main CPU to initialize gic
++	 * 2/CPU_STATE_WAIT_GIC_IRQ: waiting for first gic interrupt from main CPU
++	 * 3/CPU_STATE_WAIT_OS_ADDR: waiting for main CPU to issue CPU release addr
++	 * 4/CPU_STATE_JUMP_TO_OS:   read valid CPU release addr, jump to OS
++	 */
++	volatile u64 *cpuState = &psci_cpu_state[0];
++
++	psci_debug();
++	ret = psci_cpu_on_validate_mpidr(mpidr, &cpu);
++	if (ret != ARM_PSCI_RET_SUCCESS) {
++		return ret;
++	}
++
++	psci_ascii_out("Turning on CPU: "); psci_hex_out2(cpu); psci_ascii_out("\n");
++
++	if (cpu == 0) {
++		// CPU0 is considered the main CPU by U-Boot startup code. We must prevent
++		// starting U-Boot again if we are called from the OS. Therefore we can set
++		// a state variable to indicate the CPU0 should be considered a secondary
++		// CPU when starting
++		psci_cpu0_role = CPU_ROLE_SECONDARY;
++	}
++
++	ret = do_cpu_on_power_on(cpu);
++	if (ret != ARM_PSCI_RET_SUCCESS) {
++		ret = ARM_PSCI_RET_INTERNAL_FAILURE;
++		goto fail;
++	}
++
++	/* Wait until CPU has entered U-Boot and is waiting for main CPU to wake it up.
++	 * It is possible that the CPU has already past this point. This can happen if
++	 * all CPUs (or all threads of one CPU) are starting in parallel.
++	 */
++	if (cpuState[cpu] < CPU_STATE_WAIT_GIC_IRQ) {
++		psci_ascii_out("Waiting for CPU to enter state 2...\n");
++		ret = psci_wait_for_secondary_cpu_state(cpu, 2, SECONDARY_CPU_TIMEOUT);
++		if (ret != ARM_PSCI_RET_SUCCESS) {
++			psci_ascii_out("Timeout waiting for CPU to enter U-Boot. Current state: "); psci_hex_out2(cpuState[cpu]); psci_ascii_out(", expected state: 2\n");
++			ret = ARM_PSCI_RET_INTERNAL_FAILURE;
++			goto fail;
++		}
++	}
++
++	psci_ascii_out("Waiting for CPU to enter state 3...\n");
++	if (cpuState[cpu] < CPU_STATE_WAIT_OS_ADDR) {
++		/* CPU is waiting for main CPU to wake it up. Wake up CPU and wait until it enters the next state. */
++		psci_ascii_out("Kicking CPU to enter state 3...\n");
++		smp_kick_all_cpus_secure();
++		ret = psci_wait_for_secondary_cpu_state(cpu, 3, SECONDARY_CPU_TIMEOUT);
++		if (ret != ARM_PSCI_RET_SUCCESS) {
++			psci_ascii_out("Timeout waiting for gic interrupt. Current state: "); psci_hex_out2(cpuState[cpu]); psci_ascii_out(", expected state: 3\n");
++			ret = ARM_PSCI_RET_INTERNAL_FAILURE;
++			goto fail;
++		}
++	}
++
++	psci_ascii_out("Waiting for CPU to enter state 4...\n");
++	if (cpuState[cpu] < CPU_STATE_JUMP_TO_OS) {
++		/* CPU is waiting for valid CPU release addr. Wake up CPU and wait until address has been consumed. */
++		psci_cpu_on_write_entry_point(cpu, entry_point_address);
++		psci_ascii_out("Kicking CPU to enter state 4...\n");
++		smp_kick_all_cpus_secure();
++		ret = psci_wait_for_secondary_cpu_state(cpu, 4, SECONDARY_CPU_TIMEOUT);
++		if (ret != ARM_PSCI_RET_SUCCESS) {
++			psci_ascii_out("Timeout waiting for CPU to enter OS. Current state: "); psci_hex_out2(cpuState[cpu]); psci_ascii_out(", expected state: 4\n");
++			ret = ARM_PSCI_RET_INTERNAL_FAILURE;
++			goto fail;
++		}
++	}
++
++	psci_set_state(cpu, PSCI_AFFINITY_LEVEL_ON);
++
++	/* CPU has entered OS, reset it's state for the next round */
++	if (cpu != 0) {
++		cpuState[cpu] = CPU_STATE_NOT_IN_UBOOT;
++	} else {
++		psci_cpu0_role = CPU_ROLE_MAIN;
++		cpuState[cpu] = CPU_STATE_WAIT_GICD;	/* make sure other CPUs know that main CPU already initialized GICD */
++	}
++
++	psci_ascii_out("Done turning on CPU: "); psci_hex_out2(cpu); psci_ascii_out("\n");
++	return ARM_PSCI_RET_SUCCESS;
++
++fail:
++	if (cpu == 0) {
++		psci_cpu0_role = CPU_ROLE_MAIN;
++	}
++	return ret;
++}
++
++__secure s32 psci_affinity_info_64(u32 __always_unused function_id, u64 mpidr, u32 lowest_affinity_level)
++{
++	u32 cpu = 0;
++
++	if (mpidr & ~(MPIDR_AFF0 | MPIDR_AFF1))
++		return ARM_PSCI_RET_INVAL;
++
++	if (lowest_affinity_level > 0)
++		return ARM_PSCI_RET_INVAL;
++
++	cpu = 2 * ((mpidr & MPIDR_AFF1) >> 8) + (mpidr & MPIDR_AFF0);
++
++	if (cpu >= CONFIG_ARMV8_PSCI_NR_CPUS)
++		return ARM_PSCI_RET_INVAL;
++
++	return psci_state[cpu];
++}
++
++__secure void psci_system_reset(void)
++{
++	psci_debug();
++	(void) do_system_reset();
++
++	while (1)
++		wfi();
++}
++
++__secure s32 psci_system_reset2_64(u32 __always_unused function_id, u32 reset_type, u64 cookie)
++{
++	psci_debug();
++	psci_system_reset();
++	return 0;	/* Not reached */
++}
++
++/*
++ * 32bit PSCI code
++ */
++__secure s32 psci_affinity_info(u32 __always_unused function_id, u32 target_affinity, u32 lowest_affinity_level)
++{
++	psci_debug();
++	return psci_affinity_info_64(function_id, target_affinity, lowest_affinity_level);
++}
++
++__secure s32 psci_cpu_on(u32 __always_unused function_id, u32 mpidr, u32 entry_point_address, u32 context_id)
++{
++	psci_debug();
++	return psci_cpu_on_64(function_id, mpidr, entry_point_address, context_id);
++}
++
++__secure void psci_cpu_off(void)
++{
++	/* no psci_uart output in this function because:
++	 * 1. the function is called on cpu 1-3, printing will interfere with output from cpu 0
++	 * 2. debug output is causing a huge delay, linux will call affinity info on cpu 0 shortly
++	 * after calling this function on cpu1-3. If we haven't called 'psci_set_state(cpu, PSCI_AFFINITY_LEVEL_OFF)'
++	 * at that point, Linux will assume that stopping the cpu might have failed.
++	 */
++	u32 cpu = psci_get_cpu_id();
++
++	if (cpu >= CONFIG_ARMV8_PSCI_NR_CPUS)
++		return;
++
++	gicv3_cpuif_disable();
++	gicv3_rdistif_off();
++	request_thread_pwroff();
++
++	(void) do_cpu_on_power_off(cpu);
++
++	psci_set_state(cpu, PSCI_AFFINITY_LEVEL_OFF);
++
++	dsb();
++	while (true) {
++		wfi();
++	}
++}
++
++__secure u32 psci_migrate_info_type(void)
++{
++	psci_debug();
++	/* Trusted OS is either not present or does not require migration */
++	return 2;
++}
++
++__secure void psci_system_off(void)
++{
++	psci_debug();
++	do_system_off();
++
++	while (1)
++		wfi();
++}
++
++/*
++ * PSCI jump table
++ */
++__secure s32 psci_features(u32 __always_unused function_id, u32 psci_fid)
++{
++	psci_debug();
++	psci_ascii_out("psci_fid: "); psci_hex_out8(psci_fid); psci_ascii_out("\n"); \
++
++	switch (psci_fid) {
++	case ARM_PSCI_0_2_FN_PSCI_VERSION:
++	case ARM_PSCI_0_2_FN_CPU_OFF:
++	case ARM_PSCI_0_2_FN_CPU_ON:
++	case ARM_PSCI_0_2_FN_AFFINITY_INFO:
++	case ARM_PSCI_0_2_FN_MIGRATE_INFO_TYPE:
++	case ARM_PSCI_0_2_FN_SYSTEM_OFF:
++	case ARM_PSCI_0_2_FN_SYSTEM_RESET:
++	case ARM_PSCI_0_2_FN64_CPU_ON:
++	case ARM_PSCI_0_2_FN64_AFFINITY_INFO:
++
++	/* PSCI 1.0 interface */
++	case ARM_PSCI_1_0_FN_PSCI_FEATURES:
++
++	/* PSCI 1.1 interface */
++	case ARM_PSCI_1_1_FN64_SYSTEM_RESET2:
++		return 0x0;
++
++	/*
++	 * Not implemented:
++	 * ARM_PSCI_0_2_FN_CPU_SUSPEND
++	 * ARM_PSCI_1_0_FN_CPU_FREEZE
++	 * ARM_PSCI_1_0_FN_CPU_DEFAULT_SUSPEND
++	 * ARM_PSCI_1_0_FN_NODE_HW_STATE
++	 * ARM_PSCI_1_0_FN_SYSTEM_SUSPEND
++	 * ARM_PSCI_1_0_FN_SET_SUSPEND_MODE
++	 * ARM_PSCI_1_0_FN_STAT_RESIDENCY
++	 * ARM_PSCI_1_0_FN_STAT_COUNT
++	 * ARM_PSCI_0_2_FN64_CPU_SUSPEND
++	 * ARM_PSCI_1_0_FN64_CPU_DEFAULT_SUSPEND
++	 * ARM_PSCI_1_0_FN64_NODE_HW_STATE
++	 * ARM_PSCI_1_0_FN64_SYSTEM_SUSPEND
++	 * ARM_PSCI_1_0_FN64_STAT_RESIDENCY
++	 * ARM_PSCI_1_0_FN64_STAT_COUNT
++	 */
++
++	/* Not required, ARM_PSCI_0_2_FN_MIGRATE_INFO_TYPE returns 2 */
++	case ARM_PSCI_0_2_FN_MIGRATE:
++	case ARM_PSCI_0_2_FN64_MIGRATE:
++	/* Not required */
++	case ARM_PSCI_0_2_FN_MIGRATE_INFO_UP_CPU:
++	case ARM_PSCI_0_2_FN64_MIGRATE_INFO_UP_CPU:
++	default:
++		return ARM_PSCI_RET_NI;
++	}
++}
+-- 
+2.34.1
+

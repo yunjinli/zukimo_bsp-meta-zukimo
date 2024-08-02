@@ -1,0 +1,37 @@
+From 293ebcd8d90b26005708571506339b9cf54fe651 Mon Sep 17 00:00:00 2001
+From: Ralph Hempel <ralph.hempel@dreamchip.de>
+Date: Tue, 6 Feb 2024 13:15:35 +0100
+Subject: [PATCH 25/34] adv7511: add support for embedded sync
+
+Upstream-Status: Pending
+---
+ drivers/media/i2c/adv7511-v4l2.c | 13 +++++++++++++
+ 1 file changed, 13 insertions(+)
+
+diff --git a/drivers/media/i2c/adv7511-v4l2.c b/drivers/media/i2c/adv7511-v4l2.c
+index 84a4bb1a3f42..5b8214ed1bb7 100644
+--- a/drivers/media/i2c/adv7511-v4l2.c
++++ b/drivers/media/i2c/adv7511-v4l2.c
+@@ -1087,6 +1087,19 @@ static int adv7511_s_dv_timings(struct v4l2_subdev *sd,
+ 	/* update quantization range based on new dv_timings */
+ 	adv7511_set_rgb_quantization_mode(sd, state->rgb_quantization_range_ctrl);
+ 
++	v4l2_dbg(1, debug, sd, "%s: hbackporch %d\n", __func__, bt->hbackporch);
++	v4l2_dbg(1, debug, sd, "%s: hfrontporch %d\n", __func__, bt->hfrontporch);
++	v4l2_dbg(1, debug, sd, "%s: vbackporch %d\n", __func__, bt->vbackporch);
++	v4l2_dbg(1, debug, sd, "%s: vfrontporch %d\n", __func__, bt->vfrontporch);
++	v4l2_dbg(1, debug, sd, "%s: hsync %d\n", __func__, bt->hsync);
++	v4l2_dbg(1, debug, sd, "%s: vsync %d\n", __func__, bt->vsync);
++
++	adv7511_wr(sd, 0x30, bt->hfrontporch >> 2);
++	adv7511_wr(sd, 0x31, ((bt->hfrontporch & 0x3) << 6) | ((bt->hsync >> 4) & 0x3f));
++	adv7511_wr(sd, 0x32, ((bt->hsync & 0xf) << 4) | ((bt->vfrontporch >> 6) & 0xf));
++	adv7511_wr(sd, 0x33, ((bt->vfrontporch & 0x3f) << 2) | ((bt->vsync >> 8) & 0x3));
++	adv7511_wr(sd, 0x34, bt->vsync);
++
+ 	return 0;
+ }
+ 
+-- 
+2.34.1
+

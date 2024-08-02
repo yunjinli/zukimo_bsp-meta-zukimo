@@ -1,0 +1,69 @@
+From 7232f1793205b53fa123b10756719c772e00c45a Mon Sep 17 00:00:00 2001
+From: Stefan Stuerke <stefan.stuerke@dreamchip.de>
+Date: Thu, 18 Apr 2024 12:32:50 +0200
+Subject: [PATCH 29/34] Zukimo: add reset controller support to clk_init
+
+Upstream-Status: Pending
+---
+ drivers/net/ethernet/cadence/macb_main.c | 28 +++++++++++++++++++++++-
+ 1 file changed, 27 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/net/ethernet/cadence/macb_main.c b/drivers/net/ethernet/cadence/macb_main.c
+index 8ddbe9e80c3f..c96126607509 100644
+--- a/drivers/net/ethernet/cadence/macb_main.c
++++ b/drivers/net/ethernet/cadence/macb_main.c
+@@ -4605,6 +4605,24 @@ static int fu540_c000_clk_init(struct platform_device *pdev, struct clk **pclk,
+ 	return err;
+ }
+ 
++static int dct_zukimo_clk_init(struct platform_device *pdev, struct clk **pclk,
++			       struct clk **hclk, struct clk **tx_clk,
++			       struct clk **rx_clk, struct clk **tsu_clk)
++{
++	int err = 0;
++
++	err = macb_clk_init(pdev, pclk, hclk, tx_clk, rx_clk, tsu_clk);
++	if (err)
++		return err;
++
++	err = device_reset_optional(&pdev->dev);
++	if (err) {
++		return dev_err_probe(&pdev->dev, err, "failed to reset controller");
++	}
++
++	return 0;
++}
++
+ static int fu540_c000_init(struct platform_device *pdev)
+ {
+ 	mgmt->reg = devm_platform_ioremap_resource(pdev, 1);
+@@ -4704,10 +4722,17 @@ static const struct macb_config sama5d3macb_config = {
+ };
+ 
+ static const struct macb_config pc302gem_config = {
++	.caps = MACB_CAPS_SG_DISABLED | MACB_CAPS_GIGABIT_MODE_AVAILABLE,
++	.dma_burst_length = 16,
++	.clk_init = macb_clk_init,
++	.init = macb_init,
++};
++
++static const struct macb_config dct_zukimo_gem_config = {
+ 	.caps = MACB_CAPS_USRIO_DISABLED | MACB_CAPS_SG_DISABLED |
+ 		MACB_CAPS_GIGABIT_MODE_AVAILABLE | MACB_CAPS_GEM_HAS_PTP,
+ 	.dma_burst_length = 16,
+-	.clk_init = macb_clk_init,
++	.clk_init = dct_zukimo_clk_init,
+ 	.init = macb_init,
+ };
+ 
+@@ -4824,6 +4849,7 @@ static const struct of_device_id macb_dt_ids[] = {
+ 	{ .compatible = "cdns,np4-macb", .data = &np4_config },
+ 	{ .compatible = "cdns,pc302-gem", .data = &pc302gem_config },
+ 	{ .compatible = "cdns,gem", .data = &pc302gem_config },
++	{ .compatible = "cdns,zukimo-macb", .data = &dct_zukimo_gem_config },
+ 	{ .compatible = "cdns,sam9x60-macb", .data = &at91sam9260_config },
+ 	{ .compatible = "atmel,sama5d2-gem", .data = &sama5d2_config },
+ 	{ .compatible = "atmel,sama5d29-gem", .data = &sama5d29_config },
+-- 
+2.34.1
+

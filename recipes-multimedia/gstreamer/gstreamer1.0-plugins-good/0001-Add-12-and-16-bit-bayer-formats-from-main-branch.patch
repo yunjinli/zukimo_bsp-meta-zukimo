@@ -1,0 +1,460 @@
+From d44e00c9087cfd53c31d5ded563b53ca297a6927 Mon Sep 17 00:00:00 2001
+From: Klaus Kaiser <klaus.kaiser@dreamchip.de>
+Date: Wed, 10 Jan 2024 16:54:00 +0100
+Subject: [PATCH] Add 12 and 16 bit bayer formats from main branch
+
+Upstream-Status: Pending
+---
+ docs/gst_plugins_cache.json |  16 +--
+ sys/v4l2/gstv4l2object.c    | 195 +++++++++++++++++++++++++++++++++---
+ sys/v4l2/gstv4l2object.h    |   5 +-
+ 3 files changed, 191 insertions(+), 25 deletions(-)
+
+diff --git a/docs/gst_plugins_cache.json b/docs/gst_plugins_cache.json
+index 5847e94..7b39380 100644
+--- a/docs/gst_plugins_cache.json
++++ b/docs/gst_plugins_cache.json
+@@ -7027,7 +7027,7 @@
+                         "construct": false,
+                         "construct-only": false,
+                         "controllable": false,
+-                        "default": "GStreamer 1.22.6 FLV muxer",
++                        "default": "GStreamer 1.22.7 FLV muxer",
+                         "mutable": "null",
+                         "readable": true,
+                         "type": "gchararray",
+@@ -7039,7 +7039,7 @@
+                         "construct": false,
+                         "construct-only": false,
+                         "controllable": false,
+-                        "default": "GStreamer 1.22.6 FLV muxer",
++                        "default": "GStreamer 1.22.7 FLV muxer",
+                         "mutable": "null",
+                         "readable": true,
+                         "type": "gchararray",
+@@ -21257,7 +21257,7 @@
+                         "construct": false,
+                         "construct-only": false,
+                         "controllable": false,
+-                        "default": "GStreamer/1.22.6",
++                        "default": "GStreamer/1.22.7",
+                         "mutable": "null",
+                         "readable": true,
+                         "type": "gchararray",
+@@ -21816,7 +21816,7 @@
+                         "construct": false,
+                         "construct-only": false,
+                         "controllable": false,
+-                        "default": "GStreamer 1.22.6",
++                        "default": "GStreamer 1.22.7",
+                         "mutable": "null",
+                         "readable": true,
+                         "type": "gchararray",
+@@ -23253,7 +23253,7 @@
+                         "construct": false,
+                         "construct-only": false,
+                         "controllable": false,
+-                        "default": "GStreamer souphttpsrc 1.22.6 ",
++                        "default": "GStreamer souphttpsrc 1.22.7 ",
+                         "mutable": "null",
+                         "readable": true,
+                         "type": "gchararray",
+@@ -24891,7 +24891,7 @@
+                 "long-name": "Video (video4linux2) Sink",
+                 "pad-templates": {
+                     "sink": {
+-                        "caps": "image/jpeg:\n         parsed: true\nvideo/mpeg:\n    mpegversion: 4\n   systemstream: false\nvideo/mpeg:\n    mpegversion: { (int)1, (int)2 }\nvideo/mpegts:\n   systemstream: true\nvideo/x-bayer:\n         format: { bggr, gbrg, grbg, rggb }\n          width: [ 1, 32768 ]\n         height: [ 1, 32768 ]\n      framerate: [ 0/1, 2147483647/1 ]\nvideo/x-dv:\n   systemstream: true\nvideo/x-fwht:\nvideo/x-h263:\n        variant: itu\nvideo/x-h264:\n  stream-format: { (string)byte-stream, (string)avc }\n      alignment: au\nvideo/x-h265:\n  stream-format: byte-stream\n      alignment: au\nvideo/x-pwc1:\n          width: [ 1, 32768 ]\n         height: [ 1, 32768 ]\n      framerate: [ 0/1, 2147483647/1 ]\nvideo/x-pwc2:\n          width: [ 1, 32768 ]\n         height: [ 1, 32768 ]\n      framerate: [ 0/1, 2147483647/1 ]\nvideo/x-raw:\n         format: { RGB16, BGR, RGB, ABGR, xBGR, RGBA, RGBx, GRAY8, GRAY16_LE, GRAY16_BE, YVU9, YUY2, YVYU, UYVY, Y42B, Y41B, YUV9, NV12_64Z32, NV12_8L128, NV12_10BE_8L128, NV24, NV12_16L32S, NV61, NV16, NV21, NV12, I420, YV12, ARGB, xRGB, BGRA, BGRx, BGR15, RGB15 }\n          width: [ 1, 32768 ]\n         height: [ 1, 32768 ]\n      framerate: [ 0/1, 2147483647/1 ]\nvideo/x-sonix:\n          width: [ 1, 32768 ]\n         height: [ 1, 32768 ]\n      framerate: [ 0/1, 2147483647/1 ]\nvideo/x-vp8:\nvideo/x-vp9:\nvideo/x-wmv:\n     wmvversion: 3\n         format: WVC1\n\nvideo/x-raw(format:Interlaced):\n         format: { RGB16, BGR, RGB, ABGR, xBGR, RGBA, RGBx, GRAY8, GRAY16_LE, GRAY16_BE, YVU9, YUY2, YVYU, UYVY, Y42B, Y41B, YUV9, NV12_64Z32, NV12_8L128, NV12_10BE_8L128, NV24, NV12_16L32S, NV61, NV16, NV21, NV12, I420, YV12, ARGB, xRGB, BGRA, BGRx, BGR15, RGB15 }\n          width: [ 1, 32768 ]\n         height: [ 1, 32768 ]\n      framerate: [ 0/1, 2147483647/1 ]\n interlace-mode: alternate\n",
++                        "caps": "image/jpeg:\n         parsed: true\nvideo/mpeg:\n    mpegversion: 4\n   systemstream: false\nvideo/mpeg:\n    mpegversion: { (int)1, (int)2 }\nvideo/mpegts:\n   systemstream: true\nvideo/x-bayer:\n         format: { bggr, gbrgle, grbgle, rggble, bggr10le, gbrg10le, grbg10le, rggb10le, bggr12le, gbrg12le, grbg12le, rggb12le, bggr14le, gbrg14le, grbg14le, rggb14le, bggr16le, gbrg16le, grbg16le, rggb16le }\n          width: [ 1, 32768 ]\n         height: [ 1, 32768 ]\n      framerate: [ 0/1, 2147483647/1 ]\nvideo/x-dv:\n   systemstream: true\nvideo/x-fwht:\nvideo/x-h263:\n        variant: itu\nvideo/x-h264:\n  stream-format: { (string)byte-stream, (string)avc }\n      alignment: au\nvideo/x-h265:\n  stream-format: byte-stream\n      alignment: au\nvideo/x-pwc1:\n          width: [ 1, 32768 ]\n         height: [ 1, 32768 ]\n      framerate: [ 0/1, 2147483647/1 ]\nvideo/x-pwc2:\n          width: [ 1, 32768 ]\n         height: [ 1, 32768 ]\n      framerate: [ 0/1, 2147483647/1 ]\nvideo/x-raw:\n         format: { RGB16, BGR, RGB, ABGR, xBGR, RGBA, RGBx, GRAY8, GRAY16_LE, GRAY16_BE, YVU9, YUY2, YVYU, UYVY, Y42B, Y41B, YUV9, NV12_64Z32, NV12_8L128, NV12_10BE_8L128, NV24, NV12_16L32S, NV61, NV16, NV21, NV12, I420, YV12, ARGB, xRGB, BGRA, BGRx, BGR15, RGB15 }\n          width: [ 1, 32768 ]\n         height: [ 1, 32768 ]\n      framerate: [ 0/1, 2147483647/1 ]\nvideo/x-sonix:\n          width: [ 1, 32768 ]\n         height: [ 1, 32768 ]\n      framerate: [ 0/1, 2147483647/1 ]\nvideo/x-vp8:\nvideo/x-vp9:\nvideo/x-wmv:\n     wmvversion: 3\n         format: WVC1\n\nvideo/x-raw(format:Interlaced):\n         format: { RGB16, BGR, RGB, ABGR, xBGR, RGBA, RGBx, GRAY8, GRAY16_LE, GRAY16_BE, YVU9, YUY2, YVYU, UYVY, Y42B, Y41B, YUV9, NV12_64Z32, NV12_8L128, NV12_10BE_8L128, NV24, NV12_16L32S, NV61, NV16, NV21, NV12, I420, YV12, ARGB, xRGB, BGRA, BGRx, BGR15, RGB15 }\n          width: [ 1, 32768 ]\n         height: [ 1, 32768 ]\n      framerate: [ 0/1, 2147483647/1 ]\n interlace-mode: alternate\n",
+                         "direction": "sink",
+                         "presence": "always"
+                     }
+@@ -25199,7 +25199,7 @@
+                 "long-name": "Video (video4linux2) Source",
+                 "pad-templates": {
+                     "src": {
+-                        "caps": "image/jpeg:\n         parsed: true\nvideo/mpeg:\n    mpegversion: 4\n   systemstream: false\nvideo/mpeg:\n    mpegversion: { (int)1, (int)2 }\nvideo/mpegts:\n   systemstream: true\nvideo/x-bayer:\n         format: { bggr, gbrg, grbg, rggb }\n          width: [ 1, 32768 ]\n         height: [ 1, 32768 ]\n      framerate: [ 0/1, 2147483647/1 ]\nvideo/x-dv:\n   systemstream: true\nvideo/x-fwht:\nvideo/x-h263:\n        variant: itu\nvideo/x-h264:\n  stream-format: { (string)byte-stream, (string)avc }\n      alignment: au\nvideo/x-h265:\n  stream-format: byte-stream\n      alignment: au\nvideo/x-pwc1:\n          width: [ 1, 32768 ]\n         height: [ 1, 32768 ]\n      framerate: [ 0/1, 2147483647/1 ]\nvideo/x-pwc2:\n          width: [ 1, 32768 ]\n         height: [ 1, 32768 ]\n      framerate: [ 0/1, 2147483647/1 ]\nvideo/x-raw:\n         format: { RGB16, BGR, RGB, ABGR, xBGR, RGBA, RGBx, GRAY8, GRAY16_LE, GRAY16_BE, YVU9, YUY2, YVYU, UYVY, Y42B, Y41B, YUV9, NV12_64Z32, NV12_8L128, NV12_10BE_8L128, NV24, NV12_16L32S, NV61, NV16, NV21, NV12, I420, YV12, ARGB, xRGB, BGRA, BGRx, BGR15, RGB15 }\n          width: [ 1, 32768 ]\n         height: [ 1, 32768 ]\n      framerate: [ 0/1, 2147483647/1 ]\nvideo/x-sonix:\n          width: [ 1, 32768 ]\n         height: [ 1, 32768 ]\n      framerate: [ 0/1, 2147483647/1 ]\nvideo/x-vp8:\nvideo/x-vp9:\nvideo/x-wmv:\n     wmvversion: 3\n         format: WVC1\n\nvideo/x-raw(format:Interlaced):\n         format: { RGB16, BGR, RGB, ABGR, xBGR, RGBA, RGBx, GRAY8, GRAY16_LE, GRAY16_BE, YVU9, YUY2, YVYU, UYVY, Y42B, Y41B, YUV9, NV12_64Z32, NV12_8L128, NV12_10BE_8L128, NV24, NV12_16L32S, NV61, NV16, NV21, NV12, I420, YV12, ARGB, xRGB, BGRA, BGRx, BGR15, RGB15 }\n          width: [ 1, 32768 ]\n         height: [ 1, 32768 ]\n      framerate: [ 0/1, 2147483647/1 ]\n interlace-mode: alternate\n",
++                        "caps": "image/jpeg:\n         parsed: true\nvideo/mpeg:\n    mpegversion: 4\n   systemstream: false\nvideo/mpeg:\n    mpegversion: { (int)1, (int)2 }\nvideo/mpegts:\n   systemstream: true\nvideo/x-bayer:\n         format: { bggr, gbrgle, grbgle, rggble, bggr10le, gbrg10le, grbg10le, rggb10le, bggr12le, gbrg12le, grbg12le, rggb12le, bggr14le, gbrg14le, grbg14le, rggb14le, bggr16le, gbrg16le, grbg16le, rggb16le }\n          width: [ 1, 32768 ]\n         height: [ 1, 32768 ]\n      framerate: [ 0/1, 2147483647/1 ]\nvideo/x-dv:\n   systemstream: true\nvideo/x-fwht:\nvideo/x-h263:\n        variant: itu\nvideo/x-h264:\n  stream-format: { (string)byte-stream, (string)avc }\n      alignment: au\nvideo/x-h265:\n  stream-format: byte-stream\n      alignment: au\nvideo/x-pwc1:\n          width: [ 1, 32768 ]\n         height: [ 1, 32768 ]\n      framerate: [ 0/1, 2147483647/1 ]\nvideo/x-pwc2:\n          width: [ 1, 32768 ]\n         height: [ 1, 32768 ]\n      framerate: [ 0/1, 2147483647/1 ]\nvideo/x-raw:\n         format: { RGB16, BGR, RGB, ABGR, xBGR, RGBA, RGBx, GRAY8, GRAY16_LE, GRAY16_BE, YVU9, YUY2, YVYU, UYVY, Y42B, Y41B, YUV9, NV12_64Z32, NV12_8L128, NV12_10BE_8L128, NV24, NV12_16L32S, NV61, NV16, NV21, NV12, I420, YV12, ARGB, xRGB, BGRA, BGRx, BGR15, RGB15 }\n          width: [ 1, 32768 ]\n         height: [ 1, 32768 ]\n      framerate: [ 0/1, 2147483647/1 ]\nvideo/x-sonix:\n          width: [ 1, 32768 ]\n         height: [ 1, 32768 ]\n      framerate: [ 0/1, 2147483647/1 ]\nvideo/x-vp8:\nvideo/x-vp9:\nvideo/x-wmv:\n     wmvversion: 3\n         format: WVC1\n\nvideo/x-raw(format:Interlaced):\n         format: { RGB16, BGR, RGB, ABGR, xBGR, RGBA, RGBx, GRAY8, GRAY16_LE, GRAY16_BE, YVU9, YUY2, YVYU, UYVY, Y42B, Y41B, YUV9, NV12_64Z32, NV12_8L128, NV12_10BE_8L128, NV24, NV12_16L32S, NV61, NV16, NV21, NV12, I420, YV12, ARGB, xRGB, BGRA, BGRx, BGR15, RGB15 }\n          width: [ 1, 32768 ]\n         height: [ 1, 32768 ]\n      framerate: [ 0/1, 2147483647/1 ]\n interlace-mode: alternate\n",
+                         "direction": "src",
+                         "presence": "always"
+                     }
+@@ -28217,4 +28217,4 @@
+         "tracers": {},
+         "url": "Unknown package origin"
+     }
+-}
+\ No newline at end of file
++}
+diff --git a/sys/v4l2/gstv4l2object.c b/sys/v4l2/gstv4l2object.c
+index d201f7e..2cadafa 100644
+--- a/sys/v4l2/gstv4l2object.c
++++ b/sys/v4l2/gstv4l2object.c
+@@ -53,7 +53,7 @@ GST_DEBUG_CATEGORY_EXTERN (v4l2_debug);
+ #define DEFAULT_PROP_TV_NORM            0
+ #define DEFAULT_PROP_IO_MODE            GST_V4L2_IO_AUTO
+ 
+-#define ENCODED_BUFFER_SIZE             (2 * 1024 * 1024)
++#define ENCODED_BUFFER_MIN_SIZE         (256 * 1024)
+ #define GST_V4L2_DEFAULT_WIDTH          320
+ #define GST_V4L2_DEFAULT_HEIGHT         240
+ 
+@@ -171,6 +171,22 @@ static const GstV4L2FormatDesc gst_v4l2_formats[] = {
+   {V4L2_PIX_FMT_SGBRG8, TRUE, GST_V4L2_RAW},
+   {V4L2_PIX_FMT_SGRBG8, TRUE, GST_V4L2_RAW},
+   {V4L2_PIX_FMT_SRGGB8, TRUE, GST_V4L2_RAW},
++  {V4L2_PIX_FMT_SBGGR10, TRUE, GST_V4L2_RAW},
++  {V4L2_PIX_FMT_SGBRG10, TRUE, GST_V4L2_RAW},
++  {V4L2_PIX_FMT_SGRBG10, TRUE, GST_V4L2_RAW},
++  {V4L2_PIX_FMT_SRGGB10, TRUE, GST_V4L2_RAW},
++  {V4L2_PIX_FMT_SBGGR12, TRUE, GST_V4L2_RAW},
++  {V4L2_PIX_FMT_SGBRG12, TRUE, GST_V4L2_RAW},
++  {V4L2_PIX_FMT_SGRBG12, TRUE, GST_V4L2_RAW},
++  {V4L2_PIX_FMT_SRGGB12, TRUE, GST_V4L2_RAW},
++  {V4L2_PIX_FMT_SBGGR14, TRUE, GST_V4L2_RAW},
++  {V4L2_PIX_FMT_SGBRG14, TRUE, GST_V4L2_RAW},
++  {V4L2_PIX_FMT_SGRBG14, TRUE, GST_V4L2_RAW},
++  {V4L2_PIX_FMT_SRGGB14, TRUE, GST_V4L2_RAW},
++  {V4L2_PIX_FMT_SBGGR16, TRUE, GST_V4L2_RAW},
++  {V4L2_PIX_FMT_SGBRG16, TRUE, GST_V4L2_RAW},
++  {V4L2_PIX_FMT_SGRBG16, TRUE, GST_V4L2_RAW},
++  {V4L2_PIX_FMT_SRGGB16, TRUE, GST_V4L2_RAW},
+ 
+   /* compressed formats */
+   {V4L2_PIX_FMT_MJPEG, FALSE, GST_V4L2_CODEC},
+@@ -1149,6 +1165,22 @@ gst_v4l2_object_format_get_rank (const struct v4l2_fmtdesc *fmt)
+     case V4L2_PIX_FMT_SGBRG8:
+     case V4L2_PIX_FMT_SGRBG8:
+     case V4L2_PIX_FMT_SRGGB8:
++    case V4L2_PIX_FMT_SBGGR10:
++    case V4L2_PIX_FMT_SGBRG10:
++    case V4L2_PIX_FMT_SGRBG10:
++    case V4L2_PIX_FMT_SRGGB10:
++    case V4L2_PIX_FMT_SBGGR12:
++    case V4L2_PIX_FMT_SGBRG12:
++    case V4L2_PIX_FMT_SGRBG12:
++    case V4L2_PIX_FMT_SRGGB12:
++    case V4L2_PIX_FMT_SBGGR14:
++    case V4L2_PIX_FMT_SGBRG14:
++    case V4L2_PIX_FMT_SGRBG14:
++    case V4L2_PIX_FMT_SRGGB14:
++    case V4L2_PIX_FMT_SBGGR16:
++    case V4L2_PIX_FMT_SGBRG16:
++    case V4L2_PIX_FMT_SGRBG16:
++    case V4L2_PIX_FMT_SRGGB16:
+       rank = BAYER_BASE_RANK;
+       break;
+ 
+@@ -1462,6 +1494,22 @@ gst_v4l2_object_v4l2fourcc_is_rgb (guint32 fourcc)
+     case V4L2_PIX_FMT_SGBRG8:
+     case V4L2_PIX_FMT_SGRBG8:
+     case V4L2_PIX_FMT_SRGGB8:
++    case V4L2_PIX_FMT_SBGGR10:
++    case V4L2_PIX_FMT_SGBRG10:
++    case V4L2_PIX_FMT_SGRBG10:
++    case V4L2_PIX_FMT_SRGGB10:
++    case V4L2_PIX_FMT_SBGGR12:
++    case V4L2_PIX_FMT_SGBRG12:
++    case V4L2_PIX_FMT_SGRBG12:
++    case V4L2_PIX_FMT_SRGGB12:
++    case V4L2_PIX_FMT_SBGGR14:
++    case V4L2_PIX_FMT_SGBRG14:
++    case V4L2_PIX_FMT_SGRBG14:
++    case V4L2_PIX_FMT_SRGGB14:
++    case V4L2_PIX_FMT_SBGGR16:
++    case V4L2_PIX_FMT_SGBRG16:
++    case V4L2_PIX_FMT_SGRBG16:
++    case V4L2_PIX_FMT_SRGGB16:
+       ret = TRUE;
+       break;
+     default:
+@@ -1475,6 +1523,7 @@ static GstStructure *
+ gst_v4l2_object_v4l2fourcc_to_bare_struct (guint32 fourcc)
+ {
+   GstStructure *structure = NULL;
++  const gchar *bayer_format = NULL;
+ 
+   switch (fourcc) {
+     case V4L2_PIX_FMT_MJPEG:   /* Motion-JPEG */
+@@ -1593,14 +1642,64 @@ gst_v4l2_object_v4l2fourcc_to_bare_struct (guint32 fourcc)
+     case V4L2_PIX_FMT_WNVA:    /* Winnov hw compress */
+       break;
+     case V4L2_PIX_FMT_SBGGR8:
++      bayer_format = "bggr";
++      break;
++    case V4L2_PIX_FMT_SBGGR10:
++      bayer_format = "bggr10le";
++      break;
++    case V4L2_PIX_FMT_SBGGR12:
++      bayer_format = "bggr12le";
++      break;
++    case V4L2_PIX_FMT_SBGGR14:
++      bayer_format = "bggr14le";
++      break;
++    case V4L2_PIX_FMT_SBGGR16:
++      bayer_format = "bggr16le";
++      break;
+     case V4L2_PIX_FMT_SGBRG8:
++      bayer_format = "gbrgle";
++      break;
++    case V4L2_PIX_FMT_SGBRG10:
++      bayer_format = "gbrg10le";
++      break;
++    case V4L2_PIX_FMT_SGBRG12:
++      bayer_format = "gbrg12le";
++      break;
++    case V4L2_PIX_FMT_SGBRG14:
++      bayer_format = "gbrg14le";
++      break;
++    case V4L2_PIX_FMT_SGBRG16:
++      bayer_format = "gbrg16le";
++      break;
+     case V4L2_PIX_FMT_SGRBG8:
++      bayer_format = "grbgle";
++      break;
++    case V4L2_PIX_FMT_SGRBG10:
++      bayer_format = "grbg10le";
++      break;
++    case V4L2_PIX_FMT_SGRBG12:
++      bayer_format = "grbg12le";
++      break;
++    case V4L2_PIX_FMT_SGRBG14:
++      bayer_format = "grbg14le";
++      break;
++    case V4L2_PIX_FMT_SGRBG16:
++      bayer_format = "grbg16le";
++      break;
+     case V4L2_PIX_FMT_SRGGB8:
+-      structure = gst_structure_new ("video/x-bayer", "format", G_TYPE_STRING,
+-          fourcc == V4L2_PIX_FMT_SBGGR8 ? "bggr" :
+-          fourcc == V4L2_PIX_FMT_SGBRG8 ? "gbrg" :
+-          fourcc == V4L2_PIX_FMT_SGRBG8 ? "grbg" :
+-          /* fourcc == V4L2_PIX_FMT_SRGGB8 ? */ "rggb", NULL);
++      bayer_format = "rggble";
++      break;
++    case V4L2_PIX_FMT_SRGGB10:
++      bayer_format = "rggb10le";
++      break;
++    case V4L2_PIX_FMT_SRGGB12:
++      bayer_format = "rggb12le";
++      break;
++    case V4L2_PIX_FMT_SRGGB14:
++      bayer_format = "rggb14le";
++      break;
++    case V4L2_PIX_FMT_SRGGB16:
++      bayer_format = "rggb16le";
+       break;
+     case V4L2_PIX_FMT_SN9C10X:
+       structure = gst_structure_new_empty ("video/x-sonix");
+@@ -1637,6 +1736,10 @@ gst_v4l2_object_v4l2fourcc_to_bare_struct (guint32 fourcc)
+       break;
+   }
+ 
++  if (bayer_format)
++    structure = gst_structure_new ("video/x-bayer", "format", G_TYPE_STRING,
++        bayer_format, NULL);
++
+   return structure;
+ }
+ 
+@@ -1678,7 +1781,7 @@ gst_v4l2_object_is_raw (GstV4l2Object * v4l2object)
+ 
+   for (i = 0; i < GST_V4L2_FORMAT_COUNT; i++) {
+     if (gst_v4l2_formats[i].format == GST_V4L2_PIXELFORMAT (v4l2object)) {
+-      return ! !(gst_v4l2_formats[i].flags & GST_V4L2_RAW);
++      return !!(gst_v4l2_formats[i].flags & GST_V4L2_RAW);
+     }
+   }
+   return FALSE;
+@@ -1991,6 +2094,38 @@ gst_v4l2_object_get_caps_info (GstV4l2Object * v4l2object, GstCaps * caps,
+           fourcc = V4L2_PIX_FMT_SGRBG8;
+         else if (!g_ascii_strcasecmp (format, "rggb"))
+           fourcc = V4L2_PIX_FMT_SRGGB8;
++        else if (!g_ascii_strcasecmp (format, "bggr10le"))
++          fourcc = V4L2_PIX_FMT_SBGGR10;
++        else if (!g_ascii_strcasecmp (format, "gbrg10le"))
++          fourcc = V4L2_PIX_FMT_SGBRG10;
++        else if (!g_ascii_strcasecmp (format, "grbg10le"))
++          fourcc = V4L2_PIX_FMT_SGRBG10;
++        else if (!g_ascii_strcasecmp (format, "rggb10le"))
++          fourcc = V4L2_PIX_FMT_SRGGB10;
++        else if (!g_ascii_strcasecmp (format, "bggr12le"))
++          fourcc = V4L2_PIX_FMT_SBGGR12;
++        else if (!g_ascii_strcasecmp (format, "gbrg12le"))
++          fourcc = V4L2_PIX_FMT_SGBRG12;
++        else if (!g_ascii_strcasecmp (format, "grbg12le"))
++          fourcc = V4L2_PIX_FMT_SGRBG12;
++        else if (!g_ascii_strcasecmp (format, "rggb12le"))
++          fourcc = V4L2_PIX_FMT_SRGGB12;
++        else if (!g_ascii_strcasecmp (format, "bggr14le"))
++          fourcc = V4L2_PIX_FMT_SBGGR14;
++        else if (!g_ascii_strcasecmp (format, "gbrg14le"))
++          fourcc = V4L2_PIX_FMT_SGBRG14;
++        else if (!g_ascii_strcasecmp (format, "grbg14le"))
++          fourcc = V4L2_PIX_FMT_SGRBG14;
++        else if (!g_ascii_strcasecmp (format, "rggb14le"))
++          fourcc = V4L2_PIX_FMT_SRGGB14;
++        else if (!g_ascii_strcasecmp (format, "bggr16le"))
++          fourcc = V4L2_PIX_FMT_SBGGR16;
++        else if (!g_ascii_strcasecmp (format, "gbrg16le"))
++          fourcc = V4L2_PIX_FMT_SGBRG16;
++        else if (!g_ascii_strcasecmp (format, "grbg16le"))
++          fourcc = V4L2_PIX_FMT_SGRBG16;
++        else if (!g_ascii_strcasecmp (format, "rggb16le"))
++          fourcc = V4L2_PIX_FMT_SRGGB16;
+       }
+     } else if (g_str_equal (mimetype, "video/x-sonix")) {
+       fourcc = V4L2_PIX_FMT_SN9C10X;
+@@ -2859,6 +2994,8 @@ gst_v4l2_object_probe_caps_for_format (GstV4l2Object * v4l2object,
+     goto enum_framesizes_failed;
+ 
+   if (size.type == V4L2_FRMSIZE_TYPE_DISCRETE) {
++    guint32 maxw = 0, maxh = 0;
++
+     do {
+       GST_LOG_OBJECT (v4l2object->dbg_obj, "got discrete frame size %dx%d",
+           size.discrete.width, size.discrete.height);
+@@ -2875,8 +3012,16 @@ gst_v4l2_object_probe_caps_for_format (GstV4l2Object * v4l2object,
+           results = g_list_prepend (results, tmp);
+       }
+ 
++      if (w > maxw && h > maxh) {
++        maxw = w;
++        maxh = h;
++      }
++
+       size.index++;
+     } while (v4l2object->ioctl (fd, VIDIOC_ENUM_FRAMESIZES, &size) >= 0);
++
++    v4l2object->max_width = maxw;
++    v4l2object->max_height = maxh;
+     GST_DEBUG_OBJECT (v4l2object->dbg_obj,
+         "done iterating discrete frame sizes");
+   } else if (size.type == V4L2_FRMSIZE_TYPE_STEPWISE) {
+@@ -2922,6 +3067,9 @@ gst_v4l2_object_probe_caps_for_format (GstV4l2Object * v4l2object,
+ 
+       /* no point using the results list here, since there's only one struct */
+       gst_v4l2_object_update_and_append (v4l2object, pixelformat, ret, tmp);
++
++      v4l2object->max_width = maxw;
++      v4l2object->max_height = maxh;
+     }
+   } else if (size.type == V4L2_FRMSIZE_TYPE_CONTINUOUS) {
+     guint32 maxw, maxh;
+@@ -2951,6 +3099,9 @@ gst_v4l2_object_probe_caps_for_format (GstV4l2Object * v4l2object,
+ 
+       /* no point using the results list here, since there's only one struct */
+       gst_v4l2_object_update_and_append (v4l2object, pixelformat, ret, tmp);
++
++      v4l2object->max_width = maxw;
++      v4l2object->max_height = maxh;
+     }
+   } else {
+     goto unknown_type;
+@@ -3303,10 +3454,9 @@ gst_v4l2_object_set_stride (GstVideoInfo * info, GstVideoAlignment * align,
+ 
+     padded_height = GST_VIDEO_FORMAT_INFO_SCALE_HEIGHT (finfo, plane,
+         info->height + align->padding_top + align->padding_bottom);
+-    padded_height = (padded_height + tile_height - 1) / tile_height;
+ 
+     x_tiles = stride / GST_VIDEO_FORMAT_INFO_TILE_STRIDE (finfo, plane);
+-    y_tiles = padded_height / tile_height;
++    y_tiles = (padded_height + tile_height - 1) / tile_height;
+     info->stride[plane] = GST_VIDEO_TILE_MAKE_STRIDE (x_tiles, y_tiles);
+   } else {
+     info->stride[plane] = stride;
+@@ -3583,6 +3733,19 @@ field_to_str (enum v4l2_field f)
+   return "unknown";
+ }
+ 
++static guint
++calculate_max_sizeimage (GstV4l2Object * v4l2object, guint pixel_bitdepth)
++{
++  guint max_width, max_height;
++  guint sizeimage;
++
++  max_width = v4l2object->max_width;
++  max_height = v4l2object->max_height;
++  sizeimage = max_width * max_height * pixel_bitdepth / 8 / 2;
++
++  return MAX (ENCODED_BUFFER_MIN_SIZE, sizeimage);
++}
++
+ static gboolean
+ gst_v4l2_object_set_format_full (GstV4l2Object * v4l2object, GstCaps * caps,
+     gboolean try_only, GstV4l2Error * error)
+@@ -3596,6 +3759,7 @@ gst_v4l2_object_set_format_full (GstV4l2Object * v4l2object, GstCaps * caps,
+   GstVideoInfo info;
+   GstVideoAlignment align;
+   gint width, height, fps_n, fps_d;
++  guint pixel_bitdepth = 8;
+   gint n_v4l_planes;
+   gint i = 0;
+   gboolean is_mplane;
+@@ -3818,7 +3982,8 @@ gst_v4l2_object_set_format_full (GstV4l2Object * v4l2object, GstCaps * caps,
+     }
+ 
+     if (GST_VIDEO_INFO_FORMAT (&info) == GST_VIDEO_FORMAT_ENCODED)
+-      format.fmt.pix_mp.plane_fmt[0].sizeimage = ENCODED_BUFFER_SIZE;
++      format.fmt.pix_mp.plane_fmt[0].sizeimage =
++          calculate_max_sizeimage (v4l2object, pixel_bitdepth);
+   } else {
+     gint stride = GST_VIDEO_INFO_PLANE_STRIDE (&info, 0);
+ 
+@@ -3837,7 +4002,8 @@ gst_v4l2_object_set_format_full (GstV4l2Object * v4l2object, GstCaps * caps,
+     format.fmt.pix.bytesperline = stride;
+ 
+     if (GST_VIDEO_INFO_FORMAT (&info) == GST_VIDEO_FORMAT_ENCODED)
+-      format.fmt.pix.sizeimage = ENCODED_BUFFER_SIZE;
++      format.fmt.pix.sizeimage =
++          calculate_max_sizeimage (v4l2object, pixel_bitdepth);
+   }
+ 
+   GST_DEBUG_OBJECT (v4l2object->dbg_obj, "Desired format is %dx%d, format "
+@@ -4420,7 +4586,7 @@ unsupported_format:
+  * Returns: %TRUE on success, %FALSE on failure.
+  */
+ gboolean
+-gst_v4l2_object_set_crop (GstV4l2Object * obj, struct v4l2_rect * crop_rect)
++gst_v4l2_object_set_crop (GstV4l2Object * obj, struct v4l2_rect *crop_rect)
+ {
+   struct v4l2_selection sel = { 0 };
+   struct v4l2_crop crop = { 0 };
+@@ -4543,14 +4709,13 @@ gst_v4l2_object_get_crop_rect (GstV4l2Object * obj, guint target,
+ }
+ 
+ gboolean
+-gst_v4l2_object_get_crop_bounds (GstV4l2Object * obj, struct v4l2_rect * result)
++gst_v4l2_object_get_crop_bounds (GstV4l2Object * obj, struct v4l2_rect *result)
+ {
+   return gst_v4l2_object_get_crop_rect (obj, V4L2_SEL_TGT_CROP_BOUNDS, result);
+ }
+ 
+ gboolean
+-gst_v4l2_object_get_crop_default (GstV4l2Object * obj,
+-    struct v4l2_rect * result)
++gst_v4l2_object_get_crop_default (GstV4l2Object * obj, struct v4l2_rect *result)
+ {
+   return gst_v4l2_object_get_crop_rect (obj, V4L2_SEL_TGT_CROP_DEFAULT, result);
+ }
+diff --git a/sys/v4l2/gstv4l2object.h b/sys/v4l2/gstv4l2object.h
+index 5223cbb..666e63c 100644
+--- a/sys/v4l2/gstv4l2object.h
++++ b/sys/v4l2/gstv4l2object.h
+@@ -76,8 +76,6 @@ typedef gboolean  (*GstV4l2UpdateFpsFunction) (GstV4l2Object * v4l2object);
+  * 'unsigned long' for the 2nd parameter */
+ #ifdef __ANDROID__
+ typedef unsigned ioctl_req_t;
+-#elif defined(__linux__) && !defined(__GLIBC__) /* musl/linux */
+-typedef int ioctl_req_t;
+ #else
+ typedef gulong ioctl_req_t;
+ #endif
+@@ -228,6 +226,9 @@ struct _GstV4l2Object {
+    * on slow USB firmwares. When this is set, gst_v4l2_set_format() will modify
+    * the caps to reflect what was negotiated during fixation */
+   gboolean skip_try_fmt_probes;
++  
++  guint max_width;
++  guint max_height;
+ };
+ 
+ struct _GstV4l2ObjectClassHelper {

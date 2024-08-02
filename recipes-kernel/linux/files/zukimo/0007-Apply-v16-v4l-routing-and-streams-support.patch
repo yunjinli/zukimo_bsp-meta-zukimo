@@ -1,0 +1,2358 @@
+From b64c6381c176bd8521c3c62fbbf9b9bd02871d7e Mon Sep 17 00:00:00 2001
+From: Tomi Valkeinen <tomi.valkeinen@ideasonboard.com>
+Date: Thu, 15 Dec 2022 14:16:15 +0200
+Subject: [PATCH 07/34] Apply: v16 v4l: routing and streams support
+
+Upstream-Status: Pending
+
+git am patches/v16_20221215_tomi_valkeinen_v4l_routing_and_streams_support.mbx --reject -i
+---
+ .clang-format                                 |    1 +
+ .../driver-api/media/v4l2-subdev.rst          |    8 +
+ .../userspace-api/media/v4l/dev-subdev.rst    |  140 +++
+ .../userspace-api/media/v4l/user-func.rst     |    1 +
+ .../v4l/vidioc-subdev-enum-frame-interval.rst |    5 +-
+ .../v4l/vidioc-subdev-enum-frame-size.rst     |    5 +-
+ .../v4l/vidioc-subdev-enum-mbus-code.rst      |    5 +-
+ .../media/v4l/vidioc-subdev-g-crop.rst        |    5 +-
+ .../media/v4l/vidioc-subdev-g-fmt.rst         |    5 +-
+ .../v4l/vidioc-subdev-g-frame-interval.rst    |    5 +-
+ .../media/v4l/vidioc-subdev-g-routing.rst     |  147 +++
+ .../media/v4l/vidioc-subdev-g-selection.rst   |    5 +-
+ drivers/media/v4l2-core/v4l2-ioctl.c          |   25 +-
+ drivers/media/v4l2-core/v4l2-subdev.c         | 1000 ++++++++++++++++-
+ include/media/v4l2-subdev.h                   |  377 +++++++
+ include/uapi/linux/v4l2-subdev.h              |   74 +-
+ 16 files changed, 1758 insertions(+), 50 deletions(-)
+ create mode 100644 Documentation/userspace-api/media/v4l/vidioc-subdev-g-routing.rst
+
+diff --git a/.clang-format b/.clang-format
+index 8d01225bfcb7..ba4845e47a81 100644
+--- a/.clang-format
++++ b/.clang-format
+@@ -190,6 +190,7 @@ ForEachMacros:
+   - 'for_each_active_dev_scope'
+   - 'for_each_active_drhd_unit'
+   - 'for_each_active_iommu'
++  - 'for_each_active_route'
+   - 'for_each_aggr_pgid'
+   - 'for_each_available_child_of_node'
+   - 'for_each_bench'
+diff --git a/Documentation/driver-api/media/v4l2-subdev.rst b/Documentation/driver-api/media/v4l2-subdev.rst
+index 6f8d79926aa5..260cfa8c3f3d 100644
+--- a/Documentation/driver-api/media/v4l2-subdev.rst
++++ b/Documentation/driver-api/media/v4l2-subdev.rst
+@@ -593,6 +593,14 @@ before calling v4l2_subdev_init_finalize():
+ 
+ This shares the driver's private mutex between the controls and the states.
+ 
++Streams, multiplexed media pads and internal routing
++----------------------------------------------------
++
++A subdevice driver can implement support for multiplexed streams by setting
++the V4L2_SUBDEV_FL_STREAMS subdev flag and implementing support for
++centrally managed subdev active state, routing and stream based
++configuration.
++
+ V4L2 sub-device functions and data structures
+ ---------------------------------------------
+ 
+diff --git a/Documentation/userspace-api/media/v4l/dev-subdev.rst b/Documentation/userspace-api/media/v4l/dev-subdev.rst
+index fd1de0a73a9f..7d1b8ebd4e17 100644
+--- a/Documentation/userspace-api/media/v4l/dev-subdev.rst
++++ b/Documentation/userspace-api/media/v4l/dev-subdev.rst
+@@ -29,6 +29,8 @@ will feature a character device node on which ioctls can be called to
+ 
+ -  negotiate image formats on individual pads
+ 
++-  inspect and modify internal data routing between pads of the same entity
++
+ Sub-device character device nodes, conventionally named
+ ``/dev/v4l-subdev*``, use major number 81.
+ 
+@@ -501,3 +503,141 @@ source pads.
+     :maxdepth: 1
+ 
+     subdev-formats
++
++Streams, multiplexed media pads and internal routing
++----------------------------------------------------
++
++Commonly V4L2 subdevices support only separate video streams, that is, only a
++single stream can pass through a media link and a media pad. Thus each pad
++contains a format configuration for that single stream. In some cases a subdev
++can do stream processing and split a stream into two or compose two streams
++into one, but the inputs and outputs for the subdev are still a single stream
++per pad.
++
++Some hardware, e.g. MIPI CSI-2, support multiplexed streams, that is, multiple
++data streams are transmitted on the same bus, which is represented by a media
++link connecting a transmitter source pad with a sink pad on the receiver. For
++example, a camera sensor can produce two distinct streams, a pixel stream and a
++metadata stream, which are transmitted on the multiplexed data bus, represented
++by a media link which connects the single sensor's source pad with the receiver
++sink pad. The stream-aware receiver will de-multiplex the streams received on
++the its sink pad and allows to route them individually to one of its source
++pads.
++
++Subdevice drivers that support multiplexed streams are compatible with
++non-multiplexed subdev drivers, but, of course, require a routing configuration
++where the link between those two types of drivers contains only a single
++stream.
++
++Understanding streams
++^^^^^^^^^^^^^^^^^^^^^
++
++A stream is a stream of content (e.g. pixel data or metadata) flowing through
++the media pipeline from a source (e.g. a sensor) towards the final sink (e.g. a
++receiver and demultiplexer in a SoC). Each media link carries all the enabled
++streams from one end of the link to the other, and subdevices have routing
++tables which describe how the incoming streams from sink pads are routed to the
++source pads.
++
++A stream ID (often just "stream") is a media link-local identifier for a stream.
++In other words, a particular stream ID must exist on both sides of a media
++link, but another stream ID can be used for the same stream at the other side
++of the subdevice.
++
++A stream at a specific point in the media pipeline is identified with the
++subdev and a (pad, stream) pair. For subdevices that do not support
++multiplexed streams the 'stream' is always 0.
++
++Configuring streams
++^^^^^^^^^^^^^^^^^^^
++
++The configuration of the streams is done individually for each subdevice and
++the validity of the streams between subdevices is validated when the pipeline
++is started.
++
++There are three steps in configuring the streams:
++
++1) Set up links. Connect the pads between subdevices using the :ref:`Media
++Controller API <media_controller>`
++
++2) Routing. The routing table for the subdevice must be set with
++:ref:`VIDIOC_SUBDEV_S_ROUTING <VIDIOC_SUBDEV_G_ROUTING>` ioctl. Note that
++setting the routing table will reset all the stream configurations in a media
++entity.
++
++3) Configure streams. Each route endpoint must be configured
++with :ref:`VIDIOC_SUBDEV_S_FMT <VIDIOC_SUBDEV_G_FMT>`.
++
++Multiplexed streams setup example
++^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
++
++A simple example of a multiplexed stream setup might be as follows:
++
++- Two identical sensors (Sensor A and Sensor B). Each sensor has a single source
++  pad (pad 0) which carries a pixel data stream.
++
++- Multiplexer bridge (Bridge). The bridge has two sink pads, connected to the
++  sensors (pads 0, 1), and one source pad (pad 2), which outputs two streams.
++
++- Receiver in the SoC (Receiver). The receiver has a single sink pad (pad 0),
++  connected to the bridge, and two source pads (pads 1-2), going to the DMA
++  engine. The receiver demultiplexes the incoming streams to the source pads.
++
++- DMA Engines in the SoC (DMA Engine), one for each stream. Each DMA engine is
++  connected to a single source pad in the receiver.
++
++The sensors, the bridge and the receiver are modeled as V4L2 subdevices,
++exposed to userspace via /dev/v4l-subdevX device nodes. The DMA engines are
++modeled as V4L2 devices, exposed to userspace via /dev/videoX nodes.
++
++To configure this pipeline, the userspace must take the following steps:
++
++1) Set up media links between entities: connect the sensors to the bridge,
++bridge to the receiver, and the receiver to the DMA engines. This step does
++not differ from normal non-multiplexed media controller setup.
++
++2) Configure routing.
++
++.. flat-table:: Bridge routing table
++    :header-rows:  1
++
++    * - Sink Pad/Stream
++      - Source Pad/Stream
++      - Routing Flags
++      - Comments
++    * - 0/0
++      - 2/0
++      - V4L2_SUBDEV_ROUTE_FL_ACTIVE
++      - Pixel data stream from Sensor A
++    * - 1/0
++      - 2/1
++      - V4L2_SUBDEV_ROUTE_FL_ACTIVE
++      - Pixel data stream from Sensor B
++
++.. flat-table:: Receiver routing table
++    :header-rows:  1
++
++    * - Sink Pad/Stream
++      - Source Pad/Stream
++      - Routing Flags
++      - Comments
++    * - 0/0
++      - 1/0
++      - V4L2_SUBDEV_ROUTE_FL_ACTIVE
++      - Pixel data stream from Sensor A
++    * - 0/1
++      - 2/0
++      - V4L2_SUBDEV_ROUTE_FL_ACTIVE
++      - Pixel data stream from Sensor B
++
++3) Configure streams
++
++After configuring the routing table, the next step is configuring the streams.
++This step is similar to configuring the pads in a non-multiplexed streams
++setup, with the difference that we need to configure each (pad, stream) pair
++(i.e. route endpoint) instead of just a pad.
++
++A common way to accomplish this is to start from the sensors and propagate the
++configurations along the stream towards the receiver,
++using :ref:`VIDIOC_SUBDEV_S_FMT <VIDIOC_SUBDEV_G_FMT>` ioctls to configure each
++stream endpoint in each subdev.
+diff --git a/Documentation/userspace-api/media/v4l/user-func.rst b/Documentation/userspace-api/media/v4l/user-func.rst
+index 53e604bd7d60..228c1521f190 100644
+--- a/Documentation/userspace-api/media/v4l/user-func.rst
++++ b/Documentation/userspace-api/media/v4l/user-func.rst
+@@ -70,6 +70,7 @@ Function Reference
+     vidioc-subdev-g-crop
+     vidioc-subdev-g-fmt
+     vidioc-subdev-g-frame-interval
++    vidioc-subdev-g-routing
+     vidioc-subdev-g-selection
+     vidioc-subdev-querycap
+     vidioc-subscribe-event
+diff --git a/Documentation/userspace-api/media/v4l/vidioc-subdev-enum-frame-interval.rst b/Documentation/userspace-api/media/v4l/vidioc-subdev-enum-frame-interval.rst
+index 3703943b412f..8def4c05d3da 100644
+--- a/Documentation/userspace-api/media/v4l/vidioc-subdev-enum-frame-interval.rst
++++ b/Documentation/userspace-api/media/v4l/vidioc-subdev-enum-frame-interval.rst
+@@ -92,7 +92,10 @@ multiple pads of the same sub-device is not defined.
+       - Frame intervals to be enumerated, from enum
+ 	:ref:`v4l2_subdev_format_whence <v4l2-subdev-format-whence>`.
+     * - __u32
+-      - ``reserved``\ [8]
++      - ``stream``
++      - Stream identifier.
++    * - __u32
++      - ``reserved``\ [7]
+       - Reserved for future extensions. Applications and drivers must set
+ 	the array to zero.
+ 
+diff --git a/Documentation/userspace-api/media/v4l/vidioc-subdev-enum-frame-size.rst b/Documentation/userspace-api/media/v4l/vidioc-subdev-enum-frame-size.rst
+index c25a9896df0e..3ef361c0dca7 100644
+--- a/Documentation/userspace-api/media/v4l/vidioc-subdev-enum-frame-size.rst
++++ b/Documentation/userspace-api/media/v4l/vidioc-subdev-enum-frame-size.rst
+@@ -97,7 +97,10 @@ information about try formats.
+       - Frame sizes to be enumerated, from enum
+ 	:ref:`v4l2_subdev_format_whence <v4l2-subdev-format-whence>`.
+     * - __u32
+-      - ``reserved``\ [8]
++      - ``stream``
++      - Stream identifier.
++    * - __u32
++      - ``reserved``\ [7]
+       - Reserved for future extensions. Applications and drivers must set
+ 	the array to zero.
+ 
+diff --git a/Documentation/userspace-api/media/v4l/vidioc-subdev-enum-mbus-code.rst b/Documentation/userspace-api/media/v4l/vidioc-subdev-enum-mbus-code.rst
+index 417f1a19bcc4..248f6f9ee7c5 100644
+--- a/Documentation/userspace-api/media/v4l/vidioc-subdev-enum-mbus-code.rst
++++ b/Documentation/userspace-api/media/v4l/vidioc-subdev-enum-mbus-code.rst
+@@ -73,7 +73,10 @@ information about the try formats.
+       - ``flags``
+       - See :ref:`v4l2-subdev-mbus-code-flags`
+     * - __u32
+-      - ``reserved``\ [7]
++      - ``stream``
++      - Stream identifier.
++    * - __u32
++      - ``reserved``\ [6]
+       - Reserved for future extensions. Applications and drivers must set
+ 	the array to zero.
+ 
+diff --git a/Documentation/userspace-api/media/v4l/vidioc-subdev-g-crop.rst b/Documentation/userspace-api/media/v4l/vidioc-subdev-g-crop.rst
+index bd15c0a5a66b..1d267f7e7991 100644
+--- a/Documentation/userspace-api/media/v4l/vidioc-subdev-g-crop.rst
++++ b/Documentation/userspace-api/media/v4l/vidioc-subdev-g-crop.rst
+@@ -96,7 +96,10 @@ modified format should be as close as possible to the original request.
+       - ``rect``
+       - Crop rectangle boundaries, in pixels.
+     * - __u32
+-      - ``reserved``\ [8]
++      - ``stream``
++      - Stream identifier.
++    * - __u32
++      - ``reserved``\ [7]
+       - Reserved for future extensions. Applications and drivers must set
+ 	the array to zero.
+ 
+diff --git a/Documentation/userspace-api/media/v4l/vidioc-subdev-g-fmt.rst b/Documentation/userspace-api/media/v4l/vidioc-subdev-g-fmt.rst
+index 7acdbb939d89..ed253a1e44b7 100644
+--- a/Documentation/userspace-api/media/v4l/vidioc-subdev-g-fmt.rst
++++ b/Documentation/userspace-api/media/v4l/vidioc-subdev-g-fmt.rst
+@@ -102,7 +102,10 @@ should be as close as possible to the original request.
+       - Definition of an image format, see :c:type:`v4l2_mbus_framefmt` for
+ 	details.
+     * - __u32
+-      - ``reserved``\ [8]
++      - ``stream``
++      - Stream identifier.
++    * - __u32
++      - ``reserved``\ [7]
+       - Reserved for future extensions. Applications and drivers must set
+ 	the array to zero.
+ 
+diff --git a/Documentation/userspace-api/media/v4l/vidioc-subdev-g-frame-interval.rst b/Documentation/userspace-api/media/v4l/vidioc-subdev-g-frame-interval.rst
+index d7fe7543c506..842f962d2aea 100644
+--- a/Documentation/userspace-api/media/v4l/vidioc-subdev-g-frame-interval.rst
++++ b/Documentation/userspace-api/media/v4l/vidioc-subdev-g-frame-interval.rst
+@@ -90,7 +90,10 @@ the same sub-device is not defined.
+       - ``interval``
+       - Period, in seconds, between consecutive video frames.
+     * - __u32
+-      - ``reserved``\ [9]
++      - ``stream``
++      - Stream identifier.
++    * - __u32
++      - ``reserved``\ [8]
+       - Reserved for future extensions. Applications and drivers must set
+ 	the array to zero.
+ 
+diff --git a/Documentation/userspace-api/media/v4l/vidioc-subdev-g-routing.rst b/Documentation/userspace-api/media/v4l/vidioc-subdev-g-routing.rst
+new file mode 100644
+index 000000000000..68ca343c3b44
+--- /dev/null
++++ b/Documentation/userspace-api/media/v4l/vidioc-subdev-g-routing.rst
+@@ -0,0 +1,147 @@
++.. SPDX-License-Identifier: GFDL-1.1-no-invariants-or-later
++.. c:namespace:: V4L
++
++.. _VIDIOC_SUBDEV_G_ROUTING:
++
++******************************************************
++ioctl VIDIOC_SUBDEV_G_ROUTING, VIDIOC_SUBDEV_S_ROUTING
++******************************************************
++
++Name
++====
++
++VIDIOC_SUBDEV_G_ROUTING - VIDIOC_SUBDEV_S_ROUTING - Get or set routing between streams of media pads in a media entity.
++
++
++Synopsis
++========
++
++.. c:macro:: VIDIOC_SUBDEV_G_ROUTING
++
++``int ioctl(int fd, VIDIOC_SUBDEV_G_ROUTING, struct v4l2_subdev_routing *argp)``
++
++.. c:macro:: VIDIOC_SUBDEV_S_ROUTING
++
++``int ioctl(int fd, VIDIOC_SUBDEV_S_ROUTING, struct v4l2_subdev_routing *argp)``
++
++Arguments
++=========
++
++``fd``
++    File descriptor returned by :ref:`open() <func-open>`.
++
++``argp``
++    Pointer to struct :c:type:`v4l2_subdev_routing`.
++
++
++Description
++===========
++
++These ioctls are used to get and set the routing in a media entity.
++The routing configuration determines the flows of data inside an entity.
++
++Drivers report their current routing tables using the
++``VIDIOC_SUBDEV_G_ROUTING`` ioctl and application may enable or disable routes
++with the ``VIDIOC_SUBDEV_S_ROUTING`` ioctl, by adding or removing routes and
++setting or clearing flags of the  ``flags`` field of a
++struct :c:type:`v4l2_subdev_route`.
++
++All stream configurations are reset when ``VIDIOC_SUBDEV_S_ROUTING`` is called. This
++means that the userspace must reconfigure all streams after calling the ioctl
++with e.g. ``VIDIOC_SUBDEV_S_FMT``.
++
++Only subdevices which have both sink and source pads can support routing.
++
++When inspecting routes through ``VIDIOC_SUBDEV_G_ROUTING`` and the application
++provided ``num_routes`` is not big enough to contain all the available routes
++the subdevice exposes, drivers return the ENOSPC error code and adjust the
++value of the ``num_routes`` field. Application should then reserve enough memory
++for all the route entries and call ``VIDIOC_SUBDEV_G_ROUTING`` again.
++
++.. tabularcolumns:: |p{4.4cm}|p{4.4cm}|p{8.7cm}|
++
++.. c:type:: v4l2_subdev_routing
++
++.. flat-table:: struct v4l2_subdev_routing
++    :header-rows:  0
++    :stub-columns: 0
++    :widths:       1 1 2
++
++    * - __u32
++      - ``which``
++      - Format to modified, from enum
++        :ref:`v4l2_subdev_format_whence <v4l2-subdev-format-whence>`.
++    * - struct :c:type:`v4l2_subdev_route`
++      - ``routes[]``
++      - Array of struct :c:type:`v4l2_subdev_route` entries
++    * - __u32
++      - ``num_routes``
++      - Number of entries of the routes array
++    * - __u32
++      - ``reserved``\ [5]
++      - Reserved for future extensions. Applications and drivers must set
++	the array to zero.
++
++.. tabularcolumns:: |p{4.4cm}|p{4.4cm}|p{8.7cm}|
++
++.. c:type:: v4l2_subdev_route
++
++.. flat-table:: struct v4l2_subdev_route
++    :header-rows:  0
++    :stub-columns: 0
++    :widths:       1 1 2
++
++    * - __u32
++      - ``sink_pad``
++      - Sink pad number.
++    * - __u32
++      - ``sink_stream``
++      - Sink pad stream number.
++    * - __u32
++      - ``source_pad``
++      - Source pad number.
++    * - __u32
++      - ``source_stream``
++      - Source pad stream number.
++    * - __u32
++      - ``flags``
++      - Route enable/disable flags
++	:ref:`v4l2_subdev_routing_flags <v4l2-subdev-routing-flags>`.
++    * - __u32
++      - ``reserved``\ [5]
++      - Reserved for future extensions. Applications and drivers must set
++	the array to zero.
++
++.. tabularcolumns:: |p{6.6cm}|p{2.2cm}|p{8.7cm}|
++
++.. _v4l2-subdev-routing-flags:
++
++.. flat-table:: enum v4l2_subdev_routing_flags
++    :header-rows:  0
++    :stub-columns: 0
++    :widths:       3 1 4
++
++    * - V4L2_SUBDEV_ROUTE_FL_ACTIVE
++      - 0
++      - The route is enabled. Set by applications.
++
++Return Value
++============
++
++On success 0 is returned, on error -1 and the ``errno`` variable is set
++appropriately. The generic error codes are described at the
++:ref:`Generic Error Codes <gen-errors>` chapter.
++
++ENOSPC
++   The application provided ``num_routes`` is not big enough to contain
++   all the available routes the subdevice exposes.
++
++EINVAL
++   The sink or source pad identifiers reference a non-existing pad, or reference
++   pads of different types (ie. the sink_pad identifiers refers to a source pad)
++   or the sink or source stream identifiers reference a non-existing stream on
++   the sink or source pad.
++
++E2BIG
++   The application provided ``num_routes`` for ``VIDIOC_SUBDEV_S_ROUTING`` is
++   larger than the number of routes the driver can handle.
+diff --git a/Documentation/userspace-api/media/v4l/vidioc-subdev-g-selection.rst b/Documentation/userspace-api/media/v4l/vidioc-subdev-g-selection.rst
+index f9172a42f036..6b629c19168c 100644
+--- a/Documentation/userspace-api/media/v4l/vidioc-subdev-g-selection.rst
++++ b/Documentation/userspace-api/media/v4l/vidioc-subdev-g-selection.rst
+@@ -94,7 +94,10 @@ Selection targets and flags are documented in
+       - ``r``
+       - Selection rectangle, in pixels.
+     * - __u32
+-      - ``reserved``\ [8]
++      - ``stream``
++      - Stream identifier.
++    * - __u32
++      - ``reserved``\ [7]
+       - Reserved for future extensions. Applications and drivers must set
+ 	the array to zero.
+ 
+diff --git a/drivers/media/v4l2-core/v4l2-ioctl.c b/drivers/media/v4l2-core/v4l2-ioctl.c
+index 6876ec25bc51..dd86aef67974 100644
+--- a/drivers/media/v4l2-core/v4l2-ioctl.c
++++ b/drivers/media/v4l2-core/v4l2-ioctl.c
+@@ -16,6 +16,7 @@
+ #include <linux/kernel.h>
+ #include <linux/version.h>
+ 
++#include <linux/v4l2-subdev.h>
+ #include <linux/videodev2.h>
+ 
+ #include <media/media-device.h> /* for media_set_bus_info() */
+@@ -3151,6 +3152,21 @@ static int check_array_args(unsigned int cmd, void *parg, size_t *array_size,
+ 		ret = 1;
+ 		break;
+ 	}
++
++	case VIDIOC_SUBDEV_G_ROUTING:
++	case VIDIOC_SUBDEV_S_ROUTING: {
++		struct v4l2_subdev_routing *routing = parg;
++
++		if (routing->num_routes > 256)
++			return -E2BIG;
++
++		*user_ptr = u64_to_user_ptr(routing->routes);
++		*kernel_ptr = (void **)&routing->routes;
++		*array_size = sizeof(struct v4l2_subdev_route)
++			    * routing->num_routes;
++		ret = 1;
++		break;
++	}
+ 	}
+ 
+ 	return ret;
+@@ -3397,8 +3413,15 @@ video_usercopy(struct file *file, unsigned int orig_cmd, unsigned long arg,
+ 	/*
+ 	 * Some ioctls can return an error, but still have valid
+ 	 * results that must be returned.
++	 *
++	 * FIXME: subdev IOCTLS are partially handled here and partially in
++	 * v4l2-subdev.c and the 'always_copy' flag can only be set for IOCTLS
++	 * defined here as part of the 'v4l2_ioctls' array. As
++	 * VIDIOC_SUBDEV_G_ROUTING needs to return results to applications even
++	 * in case of failure, but it is not defined here as part of the
++	 * 'v4l2_ioctls' array, insert an ad-hoc check to address that.
+ 	 */
+-	if (err < 0 && !always_copy)
++	if (err < 0 && !always_copy && cmd != VIDIOC_SUBDEV_G_ROUTING)
+ 		goto out;
+ 
+ 	if (has_array_args) {
+diff --git a/drivers/media/v4l2-core/v4l2-subdev.c b/drivers/media/v4l2-core/v4l2-subdev.c
+index 5c27bac772ea..dd3c2d86f96e 100644
+--- a/drivers/media/v4l2-core/v4l2-subdev.c
++++ b/drivers/media/v4l2-core/v4l2-subdev.c
+@@ -8,20 +8,38 @@
+  *	    Sakari Ailus <sakari.ailus@iki.fi>
+  */
+ 
++#include <linux/export.h>
+ #include <linux/ioctl.h>
+ #include <linux/mm.h>
+ #include <linux/module.h>
++#include <linux/overflow.h>
+ #include <linux/slab.h>
+ #include <linux/types.h>
+-#include <linux/videodev2.h>
+-#include <linux/export.h>
+ #include <linux/version.h>
++#include <linux/videodev2.h>
+ 
+ #include <media/v4l2-ctrls.h>
+ #include <media/v4l2-device.h>
+-#include <media/v4l2-ioctl.h>
+-#include <media/v4l2-fh.h>
+ #include <media/v4l2-event.h>
++#include <media/v4l2-fh.h>
++#include <media/v4l2-ioctl.h>
++
++/*
++ * Streams API is an experimental feature. To use Streams API, set
++ * 'v4l2_subdev_enable_streams_api' to 1 below.
++ */
++
++static bool v4l2_subdev_enable_streams_api = 0;
++
++/*
++ * Maximum stream ID is 63 for now, as we use u64 bitmask to represent a set
++ * of streams.
++ *
++ * Note that V4L2_FRAME_DESC_ENTRY_MAX is related: V4L2_FRAME_DESC_ENTRY_MAX
++ * restricts the total number of streams in a pad, although the stream ID is
++ * not restricted.
++ */
++#define V4L2_SUBDEV_MAX_STREAM_ID 63
+ 
+ #if defined(CONFIG_VIDEO_V4L2_SUBDEV_API)
+ static int subdev_fh_init(struct v4l2_subdev_fh *fh, struct v4l2_subdev *sd)
+@@ -148,8 +166,22 @@ static inline int check_pad(struct v4l2_subdev *sd, u32 pad)
+ 	return 0;
+ }
+ 
+-static int check_state_pads(u32 which, struct v4l2_subdev_state *state)
++static int check_state(struct v4l2_subdev *sd, struct v4l2_subdev_state *state,
++		       u32 which, u32 pad, u32 stream)
+ {
++	if (sd->flags & V4L2_SUBDEV_FL_STREAMS) {
++#if defined(CONFIG_VIDEO_V4L2_SUBDEV_API)
++		if (!v4l2_subdev_state_get_stream_format(state, pad, stream))
++			return -EINVAL;
++		return 0;
++#else
++		return -EINVAL;
++#endif
++	}
++
++	if (stream != 0)
++		return -EINVAL;
++
+ 	if (which == V4L2_SUBDEV_FORMAT_TRY && (!state || !state->pads))
+ 		return -EINVAL;
+ 
+@@ -164,7 +196,7 @@ static inline int check_format(struct v4l2_subdev *sd,
+ 		return -EINVAL;
+ 
+ 	return check_which(format->which) ? : check_pad(sd, format->pad) ? :
+-	       check_state_pads(format->which, state);
++	       check_state(sd, state, format->which, format->pad, format->stream);
+ }
+ 
+ static int call_get_fmt(struct v4l2_subdev *sd,
+@@ -191,7 +223,7 @@ static int call_enum_mbus_code(struct v4l2_subdev *sd,
+ 		return -EINVAL;
+ 
+ 	return check_which(code->which) ? : check_pad(sd, code->pad) ? :
+-	       check_state_pads(code->which, state) ? :
++	       check_state(sd, state, code->which, code->pad, code->stream) ? :
+ 	       sd->ops->pad->enum_mbus_code(sd, state, code);
+ }
+ 
+@@ -203,7 +235,7 @@ static int call_enum_frame_size(struct v4l2_subdev *sd,
+ 		return -EINVAL;
+ 
+ 	return check_which(fse->which) ? : check_pad(sd, fse->pad) ? :
+-	       check_state_pads(fse->which, state) ? :
++	       check_state(sd, state, fse->which, fse->pad, fse->stream) ? :
+ 	       sd->ops->pad->enum_frame_size(sd, state, fse);
+ }
+ 
+@@ -238,7 +270,7 @@ static int call_enum_frame_interval(struct v4l2_subdev *sd,
+ 		return -EINVAL;
+ 
+ 	return check_which(fie->which) ? : check_pad(sd, fie->pad) ? :
+-	       check_state_pads(fie->which, state) ? :
++	       check_state(sd, state, fie->which, fie->pad, fie->stream) ? :
+ 	       sd->ops->pad->enum_frame_interval(sd, state, fie);
+ }
+ 
+@@ -250,7 +282,7 @@ static inline int check_selection(struct v4l2_subdev *sd,
+ 		return -EINVAL;
+ 
+ 	return check_which(sel->which) ? : check_pad(sd, sel->pad) ? :
+-	       check_state_pads(sel->which, state);
++	       check_state(sd, state, sel->which, sel->pad, sel->stream);
+ }
+ 
+ static int call_get_selection(struct v4l2_subdev *sd,
+@@ -417,6 +449,10 @@ subdev_ioctl_get_state(struct v4l2_subdev *sd, struct v4l2_subdev_fh *subdev_fh,
+ 	case VIDIOC_SUBDEV_S_SELECTION:
+ 		which = ((struct v4l2_subdev_selection *)arg)->which;
+ 		break;
++	case VIDIOC_SUBDEV_G_ROUTING:
++	case VIDIOC_SUBDEV_S_ROUTING:
++		which = ((struct v4l2_subdev_routing *)arg)->which;
++		break;
+ 	}
+ 
+ 	return which == V4L2_SUBDEV_FORMAT_TRY ?
+@@ -431,6 +467,7 @@ static long subdev_do_ioctl(struct file *file, unsigned int cmd, void *arg,
+ 	struct v4l2_subdev *sd = vdev_to_v4l2_subdev(vdev);
+ 	struct v4l2_fh *vfh = file->private_data;
+ 	bool ro_subdev = test_bit(V4L2_FL_SUBDEV_RO_DEVNODE, &vdev->flags);
++	bool streams_subdev = sd->flags & V4L2_SUBDEV_FL_STREAMS;
+ 	int rval;
+ 
+ 	switch (cmd) {
+@@ -439,7 +476,9 @@ static long subdev_do_ioctl(struct file *file, unsigned int cmd, void *arg,
+ 
+ 		memset(cap->reserved, 0, sizeof(cap->reserved));
+ 		cap->version = LINUX_VERSION_CODE;
+-		cap->capabilities = ro_subdev ? V4L2_SUBDEV_CAP_RO_SUBDEV : 0;
++		cap->capabilities =
++			(ro_subdev ? V4L2_SUBDEV_CAP_RO_SUBDEV : 0) |
++			(streams_subdev ? V4L2_SUBDEV_CAP_STREAMS : 0);
+ 
+ 		return 0;
+ 	}
+@@ -730,6 +769,81 @@ static long subdev_do_ioctl(struct file *file, unsigned int cmd, void *arg,
+ 	case VIDIOC_SUBDEV_QUERYSTD:
+ 		return v4l2_subdev_call(sd, video, querystd, arg);
+ 
++	case VIDIOC_SUBDEV_G_ROUTING: {
++		struct v4l2_subdev_routing *routing = arg;
++		struct v4l2_subdev_krouting *krouting;
++
++		if (!v4l2_subdev_enable_streams_api)
++			return -ENOIOCTLCMD;
++
++		if (!(sd->flags & V4L2_SUBDEV_FL_STREAMS))
++			return -ENOIOCTLCMD;
++
++		memset(routing->reserved, 0, sizeof(routing->reserved));
++
++		krouting = &state->routing;
++
++		if (routing->num_routes < krouting->num_routes) {
++			routing->num_routes = krouting->num_routes;
++			return -ENOSPC;
++		}
++
++		memcpy((struct v4l2_subdev_route *)(uintptr_t)routing->routes,
++		       krouting->routes,
++		       krouting->num_routes * sizeof(*krouting->routes));
++		routing->num_routes = krouting->num_routes;
++
++		return 0;
++	}
++
++	case VIDIOC_SUBDEV_S_ROUTING: {
++		struct v4l2_subdev_routing *routing = arg;
++		struct v4l2_subdev_route *routes =
++			(struct v4l2_subdev_route *)(uintptr_t)routing->routes;
++		struct v4l2_subdev_krouting krouting = {};
++		unsigned int i;
++
++		if (!v4l2_subdev_enable_streams_api)
++			return -ENOIOCTLCMD;
++
++		if (!(sd->flags & V4L2_SUBDEV_FL_STREAMS))
++			return -ENOIOCTLCMD;
++
++		if (routing->which != V4L2_SUBDEV_FORMAT_TRY && ro_subdev)
++			return -EPERM;
++
++		memset(routing->reserved, 0, sizeof(routing->reserved));
++
++		for (i = 0; i < routing->num_routes; ++i) {
++			const struct v4l2_subdev_route *route = &routes[i];
++			const struct media_pad *pads = sd->entity.pads;
++
++			if (route->sink_stream > V4L2_SUBDEV_MAX_STREAM_ID ||
++			    route->source_stream > V4L2_SUBDEV_MAX_STREAM_ID)
++				return -EINVAL;
++
++			if (route->sink_pad >= sd->entity.num_pads)
++				return -EINVAL;
++
++			if (!(pads[route->sink_pad].flags &
++			      MEDIA_PAD_FL_SINK))
++				return -EINVAL;
++
++			if (route->source_pad >= sd->entity.num_pads)
++				return -EINVAL;
++
++			if (!(pads[route->source_pad].flags &
++			      MEDIA_PAD_FL_SOURCE))
++				return -EINVAL;
++		}
++
++		krouting.num_routes = routing->num_routes;
++		krouting.routes = routes;
++
++		return v4l2_subdev_call(sd, pad, set_routing, state,
++					routing->which, &krouting);
++	}
++
+ 	default:
+ 		return v4l2_subdev_call(sd, core, ioctl, cmd, arg);
+ 	}
+@@ -910,7 +1024,7 @@ int v4l2_subdev_link_validate_default(struct v4l2_subdev *sd,
+ EXPORT_SYMBOL_GPL(v4l2_subdev_link_validate_default);
+ 
+ static int
+-v4l2_subdev_link_validate_get_format(struct media_pad *pad,
++v4l2_subdev_link_validate_get_format(struct media_pad *pad, u32 stream,
+ 				     struct v4l2_subdev_format *fmt)
+ {
+ 	if (is_media_entity_v4l2_subdev(pad->entity)) {
+@@ -919,7 +1033,11 @@ v4l2_subdev_link_validate_get_format(struct media_pad *pad,
+ 
+ 		fmt->which = V4L2_SUBDEV_FORMAT_ACTIVE;
+ 		fmt->pad = pad->index;
+-		return v4l2_subdev_call_state_active(sd, pad, get_fmt, fmt);
++		fmt->stream = stream;
++
++		return v4l2_subdev_call(sd, pad, get_fmt,
++					v4l2_subdev_get_locked_active_state(sd),
++					fmt);
+ 	}
+ 
+ 	WARN(pad->entity->function != MEDIA_ENT_F_IO_V4L,
+@@ -929,34 +1047,206 @@ v4l2_subdev_link_validate_get_format(struct media_pad *pad,
+ 	return -EINVAL;
+ }
+ 
++#if defined(CONFIG_VIDEO_V4L2_SUBDEV_API)
++
++static void __v4l2_link_validate_get_streams(struct media_pad *pad,
++					     u64 *streams_mask)
++{
++	struct v4l2_subdev_route *route;
++	struct v4l2_subdev_state *state;
++	struct v4l2_subdev *subdev;
++
++	subdev = media_entity_to_v4l2_subdev(pad->entity);
++
++	*streams_mask = 0;
++
++	state = v4l2_subdev_get_locked_active_state(subdev);
++	if (WARN_ON(!state))
++		return;
++
++	for_each_active_route(&state->routing, route) {
++		u32 route_pad;
++		u32 route_stream;
++
++		if (pad->flags & MEDIA_PAD_FL_SOURCE) {
++			route_pad = route->source_pad;
++			route_stream = route->source_stream;
++		} else {
++			route_pad = route->sink_pad;
++			route_stream = route->sink_stream;
++		}
++
++		if (route_pad != pad->index)
++			continue;
++
++		*streams_mask |= BIT_ULL(route_stream);
++	}
++}
++
++#endif /* CONFIG_VIDEO_V4L2_SUBDEV_API */
++
++static void v4l2_link_validate_get_streams(struct media_pad *pad,
++					   u64 *streams_mask)
++{
++	struct v4l2_subdev *subdev = media_entity_to_v4l2_subdev(pad->entity);
++
++	if (!(subdev->flags & V4L2_SUBDEV_FL_STREAMS)) {
++		/* Non-streams subdevs have an implicit stream 0 */
++		*streams_mask = BIT_ULL(0);
++		return;
++	}
++
++#if defined(CONFIG_VIDEO_V4L2_SUBDEV_API)
++	__v4l2_link_validate_get_streams(pad, streams_mask);
++#else
++	/* This shouldn't happen */
++	*streams_mask = 0;
++#endif
++}
++
++static int v4l2_subdev_link_validate_locked(struct media_link *link)
++{
++	struct v4l2_subdev *sink_subdev =
++		media_entity_to_v4l2_subdev(link->sink->entity);
++	struct device *dev = sink_subdev->entity.graph_obj.mdev->dev;
++	u64 source_streams_mask;
++	u64 sink_streams_mask;
++	u64 dangling_sink_streams;
++	u32 stream;
++	int ret;
++
++	dev_dbg(dev, "validating link \"%s\":%u -> \"%s\":%u\n",
++		link->source->entity->name, link->source->index,
++		link->sink->entity->name, link->sink->index);
++
++	v4l2_link_validate_get_streams(link->source, &source_streams_mask);
++	v4l2_link_validate_get_streams(link->sink, &sink_streams_mask);
++
++	/*
++	 * It is ok to have more source streams than sink streams as extra
++	 * source streams can just be ignored by the receiver, but having extra
++	 * sink streams is an error as streams must have a source.
++	 */
++	dangling_sink_streams = (source_streams_mask ^ sink_streams_mask) &
++				sink_streams_mask;
++	if (dangling_sink_streams) {
++		dev_err(dev, "Dangling sink streams: mask %#llx\n",
++			dangling_sink_streams);
++		return -EINVAL;
++	}
++
++	/* Validate source and sink stream formats */
++
++	for (stream = 0; stream < sizeof(sink_streams_mask) * 8; ++stream) {
++		struct v4l2_subdev_format sink_fmt, source_fmt;
++
++		if (!(sink_streams_mask & BIT_ULL(stream)))
++			continue;
++
++		dev_dbg(dev, "validating stream \"%s\":%u:%u -> \"%s\":%u:%u\n",
++			link->source->entity->name, link->source->index, stream,
++			link->sink->entity->name, link->sink->index, stream);
++
++		ret = v4l2_subdev_link_validate_get_format(link->source, stream,
++							   &source_fmt);
++		if (ret < 0) {
++			dev_dbg(dev,
++				"Failed to get format for \"%s\":%u:%u (but that's ok)\n",
++				link->source->entity->name, link->source->index,
++				stream);
++			continue;
++		}
++
++		ret = v4l2_subdev_link_validate_get_format(link->sink, stream,
++							   &sink_fmt);
++		if (ret < 0) {
++			dev_dbg(dev,
++				"Failed to get format for \"%s\":%u:%u (but that's ok)\n",
++				link->sink->entity->name, link->sink->index,
++				stream);
++			continue;
++		}
++
++		/* TODO: add stream number to link_validate() */
++		ret = v4l2_subdev_call(sink_subdev, pad, link_validate, link,
++				       &source_fmt, &sink_fmt);
++		if (!ret)
++			continue;
++
++		if (ret != -ENOIOCTLCMD)
++			return ret;
++
++		ret = v4l2_subdev_link_validate_default(sink_subdev, link,
++							&source_fmt, &sink_fmt);
++
++		if (ret)
++			return ret;
++	}
++
++	return 0;
++}
++
+ int v4l2_subdev_link_validate(struct media_link *link)
+ {
+-	struct v4l2_subdev *sink;
+-	struct v4l2_subdev_format sink_fmt, source_fmt;
+-	int rval;
++	struct v4l2_subdev *source_sd, *sink_sd;
++	struct v4l2_subdev_state *source_state, *sink_state;
++	int ret;
+ 
+-	rval = v4l2_subdev_link_validate_get_format(
+-		link->source, &source_fmt);
+-	if (rval < 0)
+-		return 0;
++	sink_sd = media_entity_to_v4l2_subdev(link->sink->entity);
++	source_sd = media_entity_to_v4l2_subdev(link->source->entity);
+ 
+-	rval = v4l2_subdev_link_validate_get_format(
+-		link->sink, &sink_fmt);
+-	if (rval < 0)
+-		return 0;
++	sink_state = v4l2_subdev_get_unlocked_active_state(sink_sd);
++	source_state = v4l2_subdev_get_unlocked_active_state(source_sd);
+ 
+-	sink = media_entity_to_v4l2_subdev(link->sink->entity);
++	if (sink_state)
++		v4l2_subdev_lock_state(sink_state);
+ 
+-	rval = v4l2_subdev_call(sink, pad, link_validate, link,
+-				&source_fmt, &sink_fmt);
+-	if (rval != -ENOIOCTLCMD)
+-		return rval;
++	if (source_state)
++		v4l2_subdev_lock_state(source_state);
++
++	ret = v4l2_subdev_link_validate_locked(link);
++
++	if (sink_state)
++		v4l2_subdev_unlock_state(sink_state);
++
++	if (source_state)
++		v4l2_subdev_unlock_state(source_state);
+ 
+-	return v4l2_subdev_link_validate_default(
+-		sink, link, &source_fmt, &sink_fmt);
++	return ret;
+ }
+ EXPORT_SYMBOL_GPL(v4l2_subdev_link_validate);
+ 
++bool v4l2_subdev_has_pad_interdep(struct media_entity *entity,
++				  unsigned int pad0, unsigned int pad1)
++{
++	struct v4l2_subdev *sd = media_entity_to_v4l2_subdev(entity);
++	struct v4l2_subdev_krouting *routing;
++	struct v4l2_subdev_state *state;
++	unsigned int i;
++
++	state = v4l2_subdev_lock_and_get_active_state(sd);
++
++	routing = &state->routing;
++
++	for (i = 0; i < routing->num_routes; ++i) {
++		struct v4l2_subdev_route *route = &routing->routes[i];
++
++		if (!(route->flags & V4L2_SUBDEV_ROUTE_FL_ACTIVE))
++			continue;
++
++		if ((route->sink_pad == pad0 && route->source_pad == pad1) ||
++		    (route->source_pad == pad0 && route->sink_pad == pad1)) {
++			v4l2_subdev_unlock_state(state);
++			return true;
++		}
++	}
++
++	v4l2_subdev_unlock_state(state);
++
++	return false;
++}
++EXPORT_SYMBOL_GPL(v4l2_subdev_has_pad_interdep);
++
+ struct v4l2_subdev_state *
+ __v4l2_subdev_state_alloc(struct v4l2_subdev *sd, const char *lock_name,
+ 			  struct lock_class_key *lock_key)
+@@ -974,7 +1264,8 @@ __v4l2_subdev_state_alloc(struct v4l2_subdev *sd, const char *lock_name,
+ 	else
+ 		state->lock = &state->_lock;
+ 
+-	if (sd->entity.num_pads) {
++	/* Drivers that support streams do not need the legacy pad config */
++	if (!(sd->flags & V4L2_SUBDEV_FL_STREAMS) && sd->entity.num_pads) {
+ 		state->pads = kvcalloc(sd->entity.num_pads,
+ 				       sizeof(*state->pads), GFP_KERNEL);
+ 		if (!state->pads) {
+@@ -1013,6 +1304,8 @@ void __v4l2_subdev_state_free(struct v4l2_subdev_state *state)
+ 
+ 	mutex_destroy(&state->_lock);
+ 
++	kfree(state->routing.routes);
++	kvfree(state->stream_configs.configs);
+ 	kvfree(state->pads);
+ 	kfree(state);
+ }
+@@ -1042,15 +1335,68 @@ EXPORT_SYMBOL_GPL(v4l2_subdev_cleanup);
+ 
+ #if defined(CONFIG_VIDEO_V4L2_SUBDEV_API)
+ 
++static int
++v4l2_subdev_init_stream_configs(struct v4l2_subdev_stream_configs *stream_configs,
++				const struct v4l2_subdev_krouting *routing)
++{
++	struct v4l2_subdev_stream_configs new_configs = { 0 };
++	struct v4l2_subdev_route *route;
++	u32 idx;
++
++	/* Count number of formats needed */
++	for_each_active_route(routing, route) {
++		/*
++		 * Each route needs a format on both ends of the route.
++		 */
++		new_configs.num_configs += 2;
++	}
++
++	if (new_configs.num_configs) {
++		new_configs.configs = kvcalloc(new_configs.num_configs,
++					       sizeof(*new_configs.configs),
++					       GFP_KERNEL);
++
++		if (!new_configs.configs)
++			return -ENOMEM;
++	}
++
++	/*
++	 * Fill in the 'pad' and stream' value for each item in the array from
++	 * the routing table
++	 */
++	idx = 0;
++
++	for_each_active_route(routing, route) {
++		new_configs.configs[idx].pad = route->sink_pad;
++		new_configs.configs[idx].stream = route->sink_stream;
++
++		idx++;
++
++		new_configs.configs[idx].pad = route->source_pad;
++		new_configs.configs[idx].stream = route->source_stream;
++
++		idx++;
++	}
++
++	kvfree(stream_configs->configs);
++	*stream_configs = new_configs;
++
++	return 0;
++}
++
+ int v4l2_subdev_get_fmt(struct v4l2_subdev *sd, struct v4l2_subdev_state *state,
+ 			struct v4l2_subdev_format *format)
+ {
+ 	struct v4l2_mbus_framefmt *fmt;
+ 
+-	if (format->pad >= sd->entity.num_pads)
+-		return -EINVAL;
++	if (sd->flags & V4L2_SUBDEV_FL_STREAMS)
++		fmt = v4l2_subdev_state_get_stream_format(state, format->pad,
++							  format->stream);
++	else if (format->pad < sd->entity.num_pads && format->stream == 0)
++		fmt = v4l2_subdev_get_pad_format(sd, state, format->pad);
++	else
++		fmt = NULL;
+ 
+-	fmt = v4l2_subdev_get_pad_format(sd, state, format->pad);
+ 	if (!fmt)
+ 		return -EINVAL;
+ 
+@@ -1060,6 +1406,590 @@ int v4l2_subdev_get_fmt(struct v4l2_subdev *sd, struct v4l2_subdev_state *state,
+ }
+ EXPORT_SYMBOL_GPL(v4l2_subdev_get_fmt);
+ 
++int v4l2_subdev_set_routing(struct v4l2_subdev *sd,
++			    struct v4l2_subdev_state *state,
++			    const struct v4l2_subdev_krouting *routing)
++{
++	struct v4l2_subdev_krouting *dst = &state->routing;
++	const struct v4l2_subdev_krouting *src = routing;
++	struct v4l2_subdev_krouting new_routing = { 0 };
++	size_t bytes;
++	int r;
++
++	if (unlikely(check_mul_overflow((size_t)src->num_routes,
++					sizeof(*src->routes), &bytes)))
++		return -EOVERFLOW;
++
++	lockdep_assert_held(state->lock);
++
++	if (src->num_routes > 0) {
++		new_routing.routes = kmemdup(src->routes, bytes, GFP_KERNEL);
++		if (!new_routing.routes)
++			return -ENOMEM;
++	}
++
++	new_routing.num_routes = src->num_routes;
++
++	r = v4l2_subdev_init_stream_configs(&state->stream_configs,
++					    &new_routing);
++	if (r) {
++		kfree(new_routing.routes);
++		return r;
++	}
++
++	kfree(dst->routes);
++	*dst = new_routing;
++
++	return 0;
++}
++EXPORT_SYMBOL_GPL(v4l2_subdev_set_routing);
++
++struct v4l2_subdev_route *
++__v4l2_subdev_next_active_route(const struct v4l2_subdev_krouting *routing,
++				struct v4l2_subdev_route *route)
++{
++	if (route)
++		++route;
++	else
++		route = &routing->routes[0];
++
++	for (; route < routing->routes + routing->num_routes; ++route) {
++		if (!(route->flags & V4L2_SUBDEV_ROUTE_FL_ACTIVE))
++			continue;
++
++		return route;
++	}
++
++	return NULL;
++}
++EXPORT_SYMBOL_GPL(__v4l2_subdev_next_active_route);
++
++int v4l2_subdev_set_routing_with_fmt(struct v4l2_subdev *sd,
++				     struct v4l2_subdev_state *state,
++				     struct v4l2_subdev_krouting *routing,
++				     const struct v4l2_mbus_framefmt *fmt)
++{
++	struct v4l2_subdev_stream_configs *stream_configs;
++	unsigned int i;
++	int ret;
++
++	ret = v4l2_subdev_set_routing(sd, state, routing);
++	if (ret)
++		return ret;
++
++	stream_configs = &state->stream_configs;
++
++	for (i = 0; i < stream_configs->num_configs; ++i)
++		stream_configs->configs[i].fmt = *fmt;
++
++	return 0;
++}
++EXPORT_SYMBOL_GPL(v4l2_subdev_set_routing_with_fmt);
++
++struct v4l2_mbus_framefmt *
++v4l2_subdev_state_get_stream_format(struct v4l2_subdev_state *state,
++				    unsigned int pad, u32 stream)
++{
++	struct v4l2_subdev_stream_configs *stream_configs;
++	unsigned int i;
++
++	lockdep_assert_held(state->lock);
++
++	stream_configs = &state->stream_configs;
++
++	for (i = 0; i < stream_configs->num_configs; ++i) {
++		if (stream_configs->configs[i].pad == pad &&
++		    stream_configs->configs[i].stream == stream)
++			return &stream_configs->configs[i].fmt;
++	}
++
++	return NULL;
++}
++EXPORT_SYMBOL_GPL(v4l2_subdev_state_get_stream_format);
++
++struct v4l2_rect *
++v4l2_subdev_state_get_stream_crop(struct v4l2_subdev_state *state,
++				  unsigned int pad, u32 stream)
++{
++	struct v4l2_subdev_stream_configs *stream_configs;
++	unsigned int i;
++
++	lockdep_assert_held(state->lock);
++
++	stream_configs = &state->stream_configs;
++
++	for (i = 0; i < stream_configs->num_configs; ++i) {
++		if (stream_configs->configs[i].pad == pad &&
++		    stream_configs->configs[i].stream == stream)
++			return &stream_configs->configs[i].crop;
++	}
++
++	return NULL;
++}
++EXPORT_SYMBOL_GPL(v4l2_subdev_state_get_stream_crop);
++
++struct v4l2_rect *
++v4l2_subdev_state_get_stream_compose(struct v4l2_subdev_state *state,
++				     unsigned int pad, u32 stream)
++{
++	struct v4l2_subdev_stream_configs *stream_configs;
++	unsigned int i;
++
++	lockdep_assert_held(state->lock);
++
++	stream_configs = &state->stream_configs;
++
++	for (i = 0; i < stream_configs->num_configs; ++i) {
++		if (stream_configs->configs[i].pad == pad &&
++		    stream_configs->configs[i].stream == stream)
++			return &stream_configs->configs[i].compose;
++	}
++
++	return NULL;
++}
++EXPORT_SYMBOL_GPL(v4l2_subdev_state_get_stream_compose);
++
++int v4l2_subdev_routing_find_opposite_end(const struct v4l2_subdev_krouting *routing,
++					  u32 pad, u32 stream, u32 *other_pad,
++					  u32 *other_stream)
++{
++	unsigned int i;
++
++	for (i = 0; i < routing->num_routes; ++i) {
++		struct v4l2_subdev_route *route = &routing->routes[i];
++
++		if (route->source_pad == pad &&
++		    route->source_stream == stream) {
++			if (other_pad)
++				*other_pad = route->sink_pad;
++			if (other_stream)
++				*other_stream = route->sink_stream;
++			return 0;
++		}
++
++		if (route->sink_pad == pad && route->sink_stream == stream) {
++			if (other_pad)
++				*other_pad = route->source_pad;
++			if (other_stream)
++				*other_stream = route->source_stream;
++			return 0;
++		}
++	}
++
++	return -EINVAL;
++}
++EXPORT_SYMBOL_GPL(v4l2_subdev_routing_find_opposite_end);
++
++struct v4l2_mbus_framefmt *
++v4l2_subdev_state_get_opposite_stream_format(struct v4l2_subdev_state *state,
++					     u32 pad, u32 stream)
++{
++	u32 other_pad, other_stream;
++	int ret;
++
++	ret = v4l2_subdev_routing_find_opposite_end(&state->routing,
++						    pad, stream,
++						    &other_pad, &other_stream);
++	if (ret)
++		return NULL;
++
++	return v4l2_subdev_state_get_stream_format(state, other_pad,
++						   other_stream);
++}
++EXPORT_SYMBOL_GPL(v4l2_subdev_state_get_opposite_stream_format);
++
++u64 v4l2_subdev_state_xlate_streams(const struct v4l2_subdev_state *state,
++				    u32 pad0, u32 pad1, u64 *streams)
++{
++	const struct v4l2_subdev_krouting *routing = &state->routing;
++	struct v4l2_subdev_route *route;
++	u64 streams0 = 0;
++	u64 streams1 = 0;
++
++	for_each_active_route(routing, route) {
++		if (route->sink_pad == pad0 && route->source_pad == pad1 &&
++		    (*streams & BIT_ULL(route->sink_stream))) {
++			streams0 |= BIT_ULL(route->sink_stream);
++			streams1 |= BIT_ULL(route->source_stream);
++		}
++		if (route->source_pad == pad0 && route->sink_pad == pad1 &&
++		    (*streams & BIT_ULL(route->source_stream))) {
++			streams0 |= BIT_ULL(route->source_stream);
++			streams1 |= BIT_ULL(route->sink_stream);
++		}
++	}
++
++	*streams = streams0;
++	return streams1;
++}
++EXPORT_SYMBOL_GPL(v4l2_subdev_state_xlate_streams);
++
++int v4l2_subdev_routing_validate(struct v4l2_subdev *sd,
++				 const struct v4l2_subdev_krouting *routing,
++				 enum v4l2_subdev_routing_restriction disallow)
++{
++	u32 *remote_pads = NULL;
++	unsigned int i, j;
++	int ret = -EINVAL;
++
++	if (disallow & V4L2_SUBDEV_ROUTING_NO_STREAM_MIX) {
++		remote_pads = kcalloc(sd->entity.num_pads, sizeof(*remote_pads),
++				      GFP_KERNEL);
++		if (!remote_pads)
++			return -ENOMEM;
++
++		for (i = 0; i < sd->entity.num_pads; ++i)
++			remote_pads[i] = U32_MAX;
++	}
++
++	for (i = 0; i < routing->num_routes; ++i) {
++		const struct v4l2_subdev_route *route = &routing->routes[i];
++
++		/* Validate the sink and source pad numbers. */
++		if (route->sink_pad >= sd->entity.num_pads ||
++		    !(sd->entity.pads[route->sink_pad].flags & MEDIA_PAD_FL_SINK)) {
++			dev_dbg(sd->dev, "route %u sink (%u) is not a sink pad\n",
++				i, route->sink_pad);
++			goto out;
++		}
++
++		if (route->source_pad >= sd->entity.num_pads ||
++		    !(sd->entity.pads[route->source_pad].flags & MEDIA_PAD_FL_SOURCE)) {
++			dev_dbg(sd->dev, "route %u source (%u) is not a source pad\n",
++				i, route->source_pad);
++			goto out;
++		}
++
++		/*
++		 * V4L2_SUBDEV_ROUTING_NO_STREAM_MIX: Streams on the same pad
++		 * may not be routed to streams on different pads.
++		 */
++		if (disallow & V4L2_SUBDEV_ROUTING_NO_STREAM_MIX) {
++			if (remote_pads[route->sink_pad] != U32_MAX &&
++			    remote_pads[route->sink_pad] != route->source_pad) {
++				dev_dbg(sd->dev,
++					"route %u attempts to mix %s streams\n",
++					i, "sink");
++				goto out;
++			}
++
++			if (remote_pads[route->source_pad] != U32_MAX &&
++			    remote_pads[route->source_pad] != route->sink_pad) {
++				dev_dbg(sd->dev,
++					"route %u attempts to mix %s streams\n",
++					i, "source");
++				goto out;
++			}
++
++			remote_pads[route->sink_pad] = route->source_pad;
++			remote_pads[route->source_pad] = route->sink_pad;
++		}
++
++		for (j = i + 1; j < routing->num_routes; ++j) {
++			const struct v4l2_subdev_route *r = &routing->routes[j];
++
++			/*
++			 * V4L2_SUBDEV_ROUTING_NO_1_TO_N: No two routes can
++			 * originate from the same (sink) stream.
++			 */
++			if ((disallow & V4L2_SUBDEV_ROUTING_NO_1_TO_N) &&
++			    route->sink_pad == r->sink_pad &&
++			    route->sink_stream == r->sink_stream) {
++				dev_dbg(sd->dev,
++					"routes %u and %u originate from same sink (%u/%u)\n",
++					i, j, route->sink_pad,
++					route->sink_stream);
++				goto out;
++			}
++
++			/*
++			 * V4L2_SUBDEV_ROUTING_NO_N_TO_1: No two routes can end
++			 * at the same (source) stream.
++			 */
++			if ((disallow & V4L2_SUBDEV_ROUTING_NO_N_TO_1) &&
++			    route->source_pad == r->source_pad &&
++			    route->source_stream == r->source_stream) {
++				dev_dbg(sd->dev,
++					"routes %u and %u end at same source (%u/%u)\n",
++					i, j, route->source_pad,
++					route->source_stream);
++				goto out;
++			}
++		}
++	}
++
++	ret = 0;
++
++out:
++	kfree(remote_pads);
++	return ret;
++}
++EXPORT_SYMBOL_GPL(v4l2_subdev_routing_validate);
++
++static int v4l2_subdev_enable_streams_fallback(struct v4l2_subdev *sd, u32 pad,
++					       u64 streams_mask)
++{
++	struct device *dev = sd->entity.graph_obj.mdev->dev;
++	unsigned int i;
++	int ret;
++
++	/*
++	 * The subdev doesn't implement pad-based stream enable, fall back
++	 * on the .s_stream() operation. This can only be done for subdevs that
++	 * have a single source pad, as sd->enabled_streams is global to the
++	 * subdev.
++	 */
++	if (!(sd->entity.pads[pad].flags & MEDIA_PAD_FL_SOURCE))
++		return -EOPNOTSUPP;
++
++	for (i = 0; i < sd->entity.num_pads; ++i) {
++		if (i != pad && sd->entity.pads[i].flags & MEDIA_PAD_FL_SOURCE)
++			return -EOPNOTSUPP;
++	}
++
++	if (sd->enabled_streams & streams_mask) {
++		dev_dbg(dev, "set of streams %#llx already enabled on %s:%u\n",
++			streams_mask, sd->entity.name, pad);
++		return -EALREADY;
++	}
++
++	/* Start streaming when the first streams are enabled. */
++	if (!sd->enabled_streams) {
++		ret = v4l2_subdev_call(sd, video, s_stream, 1);
++		if (ret)
++			return ret;
++	}
++
++	sd->enabled_streams |= streams_mask;
++
++	return 0;
++}
++
++int v4l2_subdev_enable_streams(struct v4l2_subdev *sd, u32 pad,
++			       u64 streams_mask)
++{
++	struct device *dev = sd->entity.graph_obj.mdev->dev;
++	struct v4l2_subdev_state *state;
++	u64 found_streams = 0;
++	unsigned int i;
++	int ret;
++
++	/* A few basic sanity checks first. */
++	if (pad >= sd->entity.num_pads)
++		return -EINVAL;
++
++	if (!streams_mask)
++		return 0;
++
++	/* Fallback on .s_stream() if .enable_streams() isn't available. */
++	if (!sd->ops->pad || !sd->ops->pad->enable_streams)
++		return v4l2_subdev_enable_streams_fallback(sd, pad,
++							   streams_mask);
++
++	state = v4l2_subdev_lock_and_get_active_state(sd);
++
++	/*
++	 * Verify that the requested streams exist and that they are not
++	 * already enabled.
++	 */
++	for (i = 0; i < state->stream_configs.num_configs; ++i) {
++		struct v4l2_subdev_stream_config *cfg =
++			&state->stream_configs.configs[i];
++
++		if (cfg->pad != pad || !(streams_mask & BIT_ULL(cfg->stream)))
++			continue;
++
++		found_streams |= BIT_ULL(cfg->stream);
++
++		if (cfg->enabled) {
++			dev_dbg(dev, "stream %u already enabled on %s:%u\n",
++				cfg->stream, sd->entity.name, pad);
++			ret = -EALREADY;
++			goto done;
++		}
++	}
++
++	if (found_streams != streams_mask) {
++		dev_dbg(dev, "streams 0x%llx not found on %s:%u\n",
++			streams_mask & ~found_streams, sd->entity.name, pad);
++		ret = -EINVAL;
++		goto done;
++	}
++
++	/* Call the .enable_streams() operation. */
++	ret = v4l2_subdev_call(sd, pad, enable_streams, state, pad,
++			       streams_mask);
++	if (ret)
++		goto done;
++
++	/* Mark the streams as enabled. */
++	for (i = 0; i < state->stream_configs.num_configs; ++i) {
++		struct v4l2_subdev_stream_config *cfg =
++			&state->stream_configs.configs[i];
++
++		if (cfg->pad == pad && (streams_mask & BIT_ULL(cfg->stream)))
++			cfg->enabled = true;
++	}
++
++done:
++	v4l2_subdev_unlock_state(state);
++
++	return ret;
++}
++EXPORT_SYMBOL_GPL(v4l2_subdev_enable_streams);
++
++static int v4l2_subdev_disable_streams_fallback(struct v4l2_subdev *sd, u32 pad,
++						u64 streams_mask)
++{
++	struct device *dev = sd->entity.graph_obj.mdev->dev;
++	unsigned int i;
++	int ret;
++
++	/*
++	 * If the subdev doesn't implement pad-based stream enable, fall  back
++	 * on the .s_stream() operation. This can only be done for subdevs that
++	 * have a single source pad, as sd->enabled_streams is global to the
++	 * subdev.
++	 */
++	if (!(sd->entity.pads[pad].flags & MEDIA_PAD_FL_SOURCE))
++		return -EOPNOTSUPP;
++
++	for (i = 0; i < sd->entity.num_pads; ++i) {
++		if (i != pad && sd->entity.pads[i].flags & MEDIA_PAD_FL_SOURCE)
++			return -EOPNOTSUPP;
++	}
++
++	if ((sd->enabled_streams & streams_mask) != streams_mask) {
++		dev_dbg(dev, "set of streams %#llx already disabled on %s:%u\n",
++			streams_mask, sd->entity.name, pad);
++		return -EALREADY;
++	}
++
++	/* Stop streaming when the last streams are disabled. */
++	if (!(sd->enabled_streams & ~streams_mask)) {
++		ret = v4l2_subdev_call(sd, video, s_stream, 0);
++		if (ret)
++			return ret;
++	}
++
++	sd->enabled_streams &= ~streams_mask;
++
++	return 0;
++}
++
++int v4l2_subdev_disable_streams(struct v4l2_subdev *sd, u32 pad,
++				u64 streams_mask)
++{
++	struct device *dev = sd->entity.graph_obj.mdev->dev;
++	struct v4l2_subdev_state *state;
++	u64 found_streams = 0;
++	unsigned int i;
++	int ret;
++
++	/* A few basic sanity checks first. */
++	if (pad >= sd->entity.num_pads)
++		return -EINVAL;
++
++	if (!streams_mask)
++		return 0;
++
++	/* Fallback on .s_stream() if .disable_streams() isn't available. */
++	if (!sd->ops->pad || !sd->ops->pad->disable_streams)
++		return v4l2_subdev_disable_streams_fallback(sd, pad,
++							    streams_mask);
++
++	state = v4l2_subdev_lock_and_get_active_state(sd);
++
++	/*
++	 * Verify that the requested streams exist and that they are not
++	 * already disabled.
++	 */
++	for (i = 0; i < state->stream_configs.num_configs; ++i) {
++		struct v4l2_subdev_stream_config *cfg =
++			&state->stream_configs.configs[i];
++
++		if (cfg->pad != pad || !(streams_mask & BIT_ULL(cfg->stream)))
++			continue;
++
++		found_streams |= BIT_ULL(cfg->stream);
++
++		if (!cfg->enabled) {
++			dev_dbg(dev, "stream %u already disabled on %s:%u\n",
++				cfg->stream, sd->entity.name, pad);
++			ret = -EALREADY;
++			goto done;
++		}
++	}
++
++	if (found_streams != streams_mask) {
++		dev_dbg(dev, "streams 0x%llx not found on %s:%u\n",
++			streams_mask & ~found_streams, sd->entity.name, pad);
++		ret = -EINVAL;
++		goto done;
++	}
++
++	/* Call the .disable_streams() operation. */
++	ret = v4l2_subdev_call(sd, pad, disable_streams, state, pad,
++			       streams_mask);
++	if (ret)
++		goto done;
++
++	/* Mark the streams as disabled. */
++	for (i = 0; i < state->stream_configs.num_configs; ++i) {
++		struct v4l2_subdev_stream_config *cfg =
++			&state->stream_configs.configs[i];
++
++		if (cfg->pad == pad && (streams_mask & BIT_ULL(cfg->stream)))
++			cfg->enabled = false;
++	}
++
++done:
++	v4l2_subdev_unlock_state(state);
++
++	return ret;
++}
++EXPORT_SYMBOL_GPL(v4l2_subdev_disable_streams);
++
++int v4l2_subdev_s_stream_helper(struct v4l2_subdev *sd, int enable)
++{
++	struct v4l2_subdev_state *state;
++	struct v4l2_subdev_route *route;
++	struct media_pad *pad;
++	u64 source_mask = 0;
++	int pad_index = -1;
++
++	/*
++	 * Find the source pad. This helper is meant for subdevs that have a
++	 * single source pad, so failures shouldn't happen, but catch them
++	 * loudly nonetheless as they indicate a driver bug.
++	 */
++	media_entity_for_each_pad(&sd->entity, pad) {
++		if (pad->flags & MEDIA_PAD_FL_SOURCE) {
++			pad_index = pad->index;
++			break;
++		}
++	}
++
++	if (WARN_ON(pad_index == -1))
++		return -EINVAL;
++
++	/*
++	 * As there's a single source pad, just collect all the source streams.
++	 */
++	state = v4l2_subdev_lock_and_get_active_state(sd);
++
++	for_each_active_route(&state->routing, route)
++		source_mask |= BIT_ULL(route->source_stream);
++
++	v4l2_subdev_unlock_state(state);
++
++	if (enable)
++		return v4l2_subdev_enable_streams(sd, pad_index, source_mask);
++	else
++		return v4l2_subdev_disable_streams(sd, pad_index, source_mask);
++}
++EXPORT_SYMBOL_GPL(v4l2_subdev_s_stream_helper);
++
+ #endif /* CONFIG_VIDEO_V4L2_SUBDEV_API */
+ 
+ #endif /* CONFIG_MEDIA_CONTROLLER */
+diff --git a/include/media/v4l2-subdev.h b/include/media/v4l2-subdev.h
+index 2f80c9c818ed..6a77aa9bb1da 100644
+--- a/include/media/v4l2-subdev.h
++++ b/include/media/v4l2-subdev.h
+@@ -342,6 +342,7 @@ enum v4l2_mbus_frame_desc_flags {
+  * struct v4l2_mbus_frame_desc_entry - media bus frame description structure
+  *
+  * @flags:	bitmask flags, as defined by &enum v4l2_mbus_frame_desc_flags.
++ * @stream:	stream in routing configuration
+  * @pixelcode:	media bus pixel code, valid if @flags
+  *		%FRAME_DESC_FL_BLOB is not set.
+  * @length:	number of octets per frame, valid if @flags
+@@ -351,6 +352,7 @@ enum v4l2_mbus_frame_desc_flags {
+  */
+ struct v4l2_mbus_frame_desc_entry {
+ 	enum v4l2_mbus_frame_desc_flags flags;
++	u32 stream;
+ 	u32 pixelcode;
+ 	u32 length;
+ 	union {
+@@ -695,12 +697,60 @@ struct v4l2_subdev_pad_config {
+ 	struct v4l2_rect try_compose;
+ };
+ 
++/**
++ * struct v4l2_subdev_stream_config - Used for storing stream configuration.
++ *
++ * @pad: pad number
++ * @stream: stream number
++ * @enabled: has the stream been enabled with v4l2_subdev_enable_stream()
++ * @fmt: &struct v4l2_mbus_framefmt
++ * @crop: &struct v4l2_rect to be used for crop
++ * @compose: &struct v4l2_rect to be used for compose
++ *
++ * This structure stores configuration for a stream.
++ */
++struct v4l2_subdev_stream_config {
++	u32 pad;
++	u32 stream;
++	bool enabled;
++
++	struct v4l2_mbus_framefmt fmt;
++	struct v4l2_rect crop;
++	struct v4l2_rect compose;
++};
++
++/**
++ * struct v4l2_subdev_stream_configs - A collection of stream configs.
++ *
++ * @num_configs: number of entries in @config.
++ * @configs: an array of &struct v4l2_subdev_stream_configs.
++ */
++struct v4l2_subdev_stream_configs {
++	u32 num_configs;
++	struct v4l2_subdev_stream_config *configs;
++};
++
++/**
++ * struct v4l2_subdev_krouting - subdev routing table
++ *
++ * @num_routes: number of routes
++ * @routes: &struct v4l2_subdev_route
++ *
++ * This structure contains the routing table for a subdev.
++ */
++struct v4l2_subdev_krouting {
++	unsigned int num_routes;
++	struct v4l2_subdev_route *routes;
++};
++
+ /**
+  * struct v4l2_subdev_state - Used for storing subdev state information.
+  *
+  * @_lock: default for 'lock'
+  * @lock: mutex for the state. May be replaced by the user.
+  * @pads: &struct v4l2_subdev_pad_config array
++ * @routing: routing table for the subdev
++ * @stream_configs: stream configurations (only for V4L2_SUBDEV_FL_STREAMS)
+  *
+  * This structure only needs to be passed to the pad op if the 'which' field
+  * of the main argument is set to %V4L2_SUBDEV_FORMAT_TRY. For
+@@ -711,6 +761,8 @@ struct v4l2_subdev_state {
+ 	struct mutex _lock;
+ 	struct mutex *lock;
+ 	struct v4l2_subdev_pad_config *pads;
++	struct v4l2_subdev_krouting routing;
++	struct v4l2_subdev_stream_configs stream_configs;
+ };
+ 
+ /**
+@@ -763,6 +815,21 @@ struct v4l2_subdev_state {
+  *		     this operation as close as possible to stream on time. The
+  *		     operation shall fail if the pad index it has been called on
+  *		     is not valid or in case of unrecoverable failures.
++ *
++ * @set_routing: enable or disable data connection routes described in the
++ *		 subdevice routing table.
++ *
++ * @enable_streams: Enable the streams defined in streams_mask on the given
++ *	source pad. Subdevs that implement this operation must use the active
++ *	state management provided by the subdev core (enabled through a call to
++ *	v4l2_subdev_init_finalize() at initialization time). Do not call
++ *	directly, use v4l2_subdev_enable_streams() instead.
++ *
++ * @disable_streams: Disable the streams defined in streams_mask on the given
++ *	source pad. Subdevs that implement this operation must use the active
++ *	state management provided by the subdev core (enabled through a call to
++ *	v4l2_subdev_init_finalize() at initialization time). Do not call
++ *	directly, use v4l2_subdev_disable_streams() instead.
+  */
+ struct v4l2_subdev_pad_ops {
+ 	int (*init_cfg)(struct v4l2_subdev *sd,
+@@ -805,6 +872,16 @@ struct v4l2_subdev_pad_ops {
+ 			      struct v4l2_mbus_frame_desc *fd);
+ 	int (*get_mbus_config)(struct v4l2_subdev *sd, unsigned int pad,
+ 			       struct v4l2_mbus_config *config);
++	int (*set_routing)(struct v4l2_subdev *sd,
++			   struct v4l2_subdev_state *state,
++			   enum v4l2_subdev_format_whence which,
++			   struct v4l2_subdev_krouting *route);
++	int (*enable_streams)(struct v4l2_subdev *sd,
++			      struct v4l2_subdev_state *state, u32 pad,
++			      u64 streams_mask);
++	int (*disable_streams)(struct v4l2_subdev *sd,
++			       struct v4l2_subdev_state *state, u32 pad,
++			       u64 streams_mask);
+ };
+ 
+ /**
+@@ -879,6 +956,17 @@ struct v4l2_subdev_internal_ops {
+  * should set this flag.
+  */
+ #define V4L2_SUBDEV_FL_HAS_EVENTS		(1U << 3)
++/*
++ * Set this flag if this subdev supports multiplexed streams. This means
++ * that the driver supports routing and handles the stream parameter in its
++ * v4l2_subdev_pad_ops handlers. More specifically, this means:
++ *
++ * - Centrally managed subdev active state is enabled
++ * - Legacy pad config is _not_ supported (state->pads is NULL)
++ * - Routing ioctls are available
++ * - Multiple streams per pad are supported
++ */
++#define V4L2_SUBDEV_FL_STREAMS			(1U << 4)
+ 
+ struct regulator_bulk_data;
+ 
+@@ -939,6 +1027,10 @@ struct v4l2_subdev_platform_data {
+  * @active_state: Active state for the subdev (NULL for subdevs tracking the
+  *		  state internally). Initialized by calling
+  *		  v4l2_subdev_init_finalize().
++ * @enabled_streams: Bitmask of enabled streams used by
++ *		     v4l2_subdev_enable_streams() and
++ *		     v4l2_subdev_disable_streams() helper functions for fallback
++ *		     cases.
+  *
+  * Each instance of a subdev driver should create this struct, either
+  * stand-alone or embedded in a larger struct.
+@@ -984,6 +1076,7 @@ struct v4l2_subdev {
+ 	 * doesn't support it.
+ 	 */
+ 	struct v4l2_subdev_state *active_state;
++	u64 enabled_streams;
+ };
+ 
+ 
+@@ -1208,6 +1301,24 @@ int v4l2_subdev_link_validate_default(struct v4l2_subdev *sd,
+  */
+ int v4l2_subdev_link_validate(struct media_link *link);
+ 
++/**
++ * v4l2_subdev_has_pad_interdep - MC has_pad_interdep implementation for subdevs
++ *
++ * @entity: pointer to &struct media_entity
++ * @pad0: pad number for the first pad
++ * @pad1: pad number for the second pad
++ *
++ * This function is an implementation of the
++ * media_entity_operations.has_pad_interdep operation for subdevs that
++ * implement the multiplexed streams API (as indicated by the
++ * V4L2_SUBDEV_FL_STREAMS subdev flag).
++ *
++ * It considers two pads interdependent if there is an active route between pad0
++ * and pad1.
++ */
++bool v4l2_subdev_has_pad_interdep(struct media_entity *entity,
++				  unsigned int pad0, unsigned int pad1);
++
+ /**
+  * __v4l2_subdev_state_alloc - allocate v4l2_subdev_state
+  *
+@@ -1368,6 +1479,272 @@ v4l2_subdev_lock_and_get_active_state(struct v4l2_subdev *sd)
+ int v4l2_subdev_get_fmt(struct v4l2_subdev *sd, struct v4l2_subdev_state *state,
+ 			struct v4l2_subdev_format *format);
+ 
++/**
++ * v4l2_subdev_set_routing() - Set given routing to subdev state
++ * @sd: The subdevice
++ * @state: The subdevice state
++ * @routing: Routing that will be copied to subdev state
++ *
++ * This will release old routing table (if any) from the state, allocate
++ * enough space for the given routing, and copy the routing.
++ *
++ * This can be used from the subdev driver's set_routing op, after validating
++ * the routing.
++ */
++int v4l2_subdev_set_routing(struct v4l2_subdev *sd,
++			    struct v4l2_subdev_state *state,
++			    const struct v4l2_subdev_krouting *routing);
++
++struct v4l2_subdev_route *
++__v4l2_subdev_next_active_route(const struct v4l2_subdev_krouting *routing,
++				struct v4l2_subdev_route *route);
++
++/**
++ * for_each_active_route - iterate on all active routes of a routing table
++ * @routing: The routing table
++ * @route: The route iterator
++ */
++#define for_each_active_route(routing, route) \
++	for ((route) = NULL;                  \
++	     ((route) = __v4l2_subdev_next_active_route((routing), (route)));)
++
++/**
++ * v4l2_subdev_set_routing_with_fmt() - Set given routing and format to subdev
++ *					state
++ * @sd: The subdevice
++ * @state: The subdevice state
++ * @routing: Routing that will be copied to subdev state
++ * @fmt: Format used to initialize all the streams
++ *
++ * This is the same as v4l2_subdev_set_routing, but additionally initializes
++ * all the streams using the given format.
++ */
++int v4l2_subdev_set_routing_with_fmt(struct v4l2_subdev *sd,
++				     struct v4l2_subdev_state *state,
++				     struct v4l2_subdev_krouting *routing,
++				     const struct v4l2_mbus_framefmt *fmt);
++
++/**
++ * v4l2_subdev_state_get_stream_format() - Get pointer to a stream format
++ * @state: subdevice state
++ * @pad: pad id
++ * @stream: stream id
++ *
++ * This returns a pointer to &struct v4l2_mbus_framefmt for the given pad +
++ * stream in the subdev state.
++ *
++ * If the state does not contain the given pad + stream, NULL is returned.
++ */
++struct v4l2_mbus_framefmt *
++v4l2_subdev_state_get_stream_format(struct v4l2_subdev_state *state,
++				    unsigned int pad, u32 stream);
++
++/**
++ * v4l2_subdev_state_get_stream_crop() - Get pointer to a stream crop rectangle
++ * @state: subdevice state
++ * @pad: pad id
++ * @stream: stream id
++ *
++ * This returns a pointer to crop rectangle for the given pad + stream in the
++ * subdev state.
++ *
++ * If the state does not contain the given pad + stream, NULL is returned.
++ */
++struct v4l2_rect *
++v4l2_subdev_state_get_stream_crop(struct v4l2_subdev_state *state,
++				  unsigned int pad, u32 stream);
++
++/**
++ * v4l2_subdev_state_get_stream_compose() - Get pointer to a stream compose
++ *					    rectangle
++ * @state: subdevice state
++ * @pad: pad id
++ * @stream: stream id
++ *
++ * This returns a pointer to compose rectangle for the given pad + stream in the
++ * subdev state.
++ *
++ * If the state does not contain the given pad + stream, NULL is returned.
++ */
++struct v4l2_rect *
++v4l2_subdev_state_get_stream_compose(struct v4l2_subdev_state *state,
++				     unsigned int pad, u32 stream);
++
++/**
++ * v4l2_subdev_routing_find_opposite_end() - Find the opposite stream
++ * @routing: routing used to find the opposite side
++ * @pad: pad id
++ * @stream: stream id
++ * @other_pad: pointer used to return the opposite pad
++ * @other_stream: pointer used to return the opposite stream
++ *
++ * This function uses the routing table to find the pad + stream which is
++ * opposite the given pad + stream.
++ *
++ * @other_pad and/or @other_stream can be NULL if the caller does not need the
++ * value.
++ *
++ * Returns 0 on success, or -EINVAL if no matching route is found.
++ */
++int v4l2_subdev_routing_find_opposite_end(const struct v4l2_subdev_krouting *routing,
++					  u32 pad, u32 stream, u32 *other_pad,
++					  u32 *other_stream);
++
++/**
++ * v4l2_subdev_state_get_opposite_stream_format() - Get pointer to opposite
++ *                                                  stream format
++ * @state: subdevice state
++ * @pad: pad id
++ * @stream: stream id
++ *
++ * This returns a pointer to &struct v4l2_mbus_framefmt for the pad + stream
++ * that is opposite the given pad + stream in the subdev state.
++ *
++ * If the state does not contain the given pad + stream, NULL is returned.
++ */
++struct v4l2_mbus_framefmt *
++v4l2_subdev_state_get_opposite_stream_format(struct v4l2_subdev_state *state,
++					     u32 pad, u32 stream);
++
++/**
++ * v4l2_subdev_state_xlate_streams() - Translate streams from one pad to another
++ *
++ * @state: Subdevice state
++ * @pad0: The first pad
++ * @pad1: The second pad
++ * @streams: Streams bitmask on the first pad
++ *
++ * Streams on sink pads of a subdev are routed to source pads as expressed in
++ * the subdev state routing table. Stream numbers don't necessarily match on
++ * the sink and source side of a route. This function translates stream numbers
++ * on @pad0, expressed as a bitmask in @streams, to the corresponding streams
++ * on @pad1 using the routing table from the @state. It returns the stream mask
++ * on @pad1, and updates @streams with the streams that have been found in the
++ * routing table.
++ *
++ * @pad0 and @pad1 must be a sink and a source, in any order.
++ *
++ * Return: The bitmask of streams of @pad1 that are routed to @streams on @pad0.
++ */
++u64 v4l2_subdev_state_xlate_streams(const struct v4l2_subdev_state *state,
++				    u32 pad0, u32 pad1, u64 *streams);
++
++/**
++ * enum v4l2_subdev_routing_restriction - Subdevice internal routing restrictions
++ *
++ * @V4L2_SUBDEV_ROUTING_NO_1_TO_N:
++ *	an input stream may not be routed to multiple output streams (stream
++ *	duplication)
++ * @V4L2_SUBDEV_ROUTING_NO_N_TO_1:
++ *	multiple input streams may not be routed to the same output stream
++ *	(stream merging)
++ * @V4L2_SUBDEV_ROUTING_NO_STREAM_MIX:
++ *	streams on the same pad may not be routed to streams on different pads
++ * @V4L2_SUBDEV_ROUTING_ONLY_1_TO_1:
++ *	only non-overlapping 1-to-1 stream routing is allowed (a combination of
++ *	@V4L2_SUBDEV_ROUTING_NO_1_TO_N and @V4L2_SUBDEV_ROUTING_NO_N_TO_1)
++ */
++enum v4l2_subdev_routing_restriction {
++	V4L2_SUBDEV_ROUTING_NO_1_TO_N = BIT(0),
++	V4L2_SUBDEV_ROUTING_NO_N_TO_1 = BIT(1),
++	V4L2_SUBDEV_ROUTING_NO_STREAM_MIX = BIT(2),
++	V4L2_SUBDEV_ROUTING_ONLY_1_TO_1 =
++		V4L2_SUBDEV_ROUTING_NO_1_TO_N |
++		V4L2_SUBDEV_ROUTING_NO_N_TO_1,
++};
++
++/**
++ * v4l2_subdev_routing_validate() - Verify that routes comply with driver
++ *				    constraints
++ * @sd: The subdevice
++ * @routing: Routing to verify
++ * @disallow: Restrictions on routes
++ *
++ * This verifies that the given routing complies with the @disallow constraints.
++ *
++ * Returns 0 on success, error value otherwise.
++ */
++int v4l2_subdev_routing_validate(struct v4l2_subdev *sd,
++				 const struct v4l2_subdev_krouting *routing,
++				 enum v4l2_subdev_routing_restriction disallow);
++
++/**
++ * v4l2_subdev_enable_streams() - Enable streams on a pad
++ * @sd: The subdevice
++ * @pad: The pad
++ * @streams_mask: Bitmask of streams to enable
++ *
++ * This function enables streams on a source @pad of a subdevice. The pad is
++ * identified by its index, while the streams are identified by the
++ * @streams_mask bitmask. This allows enabling multiple streams on a pad at
++ * once.
++ *
++ * Enabling a stream that is already enabled isn't allowed. If @streams_mask
++ * contains an already enabled stream, this function returns -EALREADY without
++ * performing any operation.
++ *
++ * Per-stream enable is only available for subdevs that implement the
++ * .enable_streams() and .disable_streams() operations. For other subdevs, this
++ * function implements a best-effort compatibility by calling the .s_stream()
++ * operation, limited to subdevs that have a single source pad.
++ *
++ * Return:
++ * * 0: Success
++ * * -EALREADY: One of the streams in streams_mask is already enabled
++ * * -EINVAL: The pad index is invalid, or doesn't correspond to a source pad
++ * * -EOPNOTSUPP: Falling back to the legacy .s_stream() operation is
++ *   impossible because the subdev has multiple source pads
++ */
++int v4l2_subdev_enable_streams(struct v4l2_subdev *sd, u32 pad,
++			       u64 streams_mask);
++
++/**
++ * v4l2_subdev_disable_streams() - Disable streams on a pad
++ * @sd: The subdevice
++ * @pad: The pad
++ * @streams_mask: Bitmask of streams to disable
++ *
++ * This function disables streams on a source @pad of a subdevice. The pad is
++ * identified by its index, while the streams are identified by the
++ * @streams_mask bitmask. This allows disabling multiple streams on a pad at
++ * once.
++ *
++ * Disabling a streams that is not enabled isn't allowed. If @streams_mask
++ * contains a disabled stream, this function returns -EALREADY without
++ * performing any operation.
++ *
++ * Per-stream disable is only available for subdevs that implement the
++ * .enable_streams() and .disable_streams() operations. For other subdevs, this
++ * function implements a best-effort compatibility by calling the .s_stream()
++ * operation, limited to subdevs that have a single source pad.
++ *
++ * Return:
++ * * 0: Success
++ * * -EALREADY: One of the streams in streams_mask is not enabled
++ * * -EINVAL: The pad index is invalid, or doesn't correspond to a source pad
++ * * -EOPNOTSUPP: Falling back to the legacy .s_stream() operation is
++ *   impossible because the subdev has multiple source pads
++ */
++int v4l2_subdev_disable_streams(struct v4l2_subdev *sd, u32 pad,
++				u64 streams_mask);
++
++/**
++ * v4l2_subdev_s_stream_helper() - Helper to implement the subdev s_stream
++ *	operation using enable_streams and disable_streams
++ * @sd: The subdevice
++ * @enable: Enable or disable streaming
++ *
++ * Subdevice drivers that implement the streams-aware
++ * &v4l2_subdev_pad_ops.enable_streams and &v4l2_subdev_pad_ops.disable_streams
++ * operations can use this helper to implement the legacy
++ * &v4l2_subdev_video_ops.s_stream operation.
++ *
++ * This helper can only be used by subdevs that have a single source pad.
++ *
++ * Return: 0 on success, or a negative error code otherwise.
++ */
++int v4l2_subdev_s_stream_helper(struct v4l2_subdev *sd, int enable);
++
+ #endif /* CONFIG_VIDEO_V4L2_SUBDEV_API */
+ 
+ #endif /* CONFIG_MEDIA_CONTROLLER */
+diff --git a/include/uapi/linux/v4l2-subdev.h b/include/uapi/linux/v4l2-subdev.h
+index 658106f5b5dc..14d9cac93277 100644
+--- a/include/uapi/linux/v4l2-subdev.h
++++ b/include/uapi/linux/v4l2-subdev.h
+@@ -24,6 +24,7 @@
+ #ifndef __LINUX_V4L2_SUBDEV_H
+ #define __LINUX_V4L2_SUBDEV_H
+ 
++#include <linux/const.h>
+ #include <linux/ioctl.h>
+ #include <linux/types.h>
+ #include <linux/v4l2-common.h>
+@@ -44,13 +45,15 @@ enum v4l2_subdev_format_whence {
+  * @which: format type (from enum v4l2_subdev_format_whence)
+  * @pad: pad number, as reported by the media API
+  * @format: media bus format (format code and frame size)
++ * @stream: stream number, defined in subdev routing
+  * @reserved: drivers and applications must zero this array
+  */
+ struct v4l2_subdev_format {
+ 	__u32 which;
+ 	__u32 pad;
+ 	struct v4l2_mbus_framefmt format;
+-	__u32 reserved[8];
++	__u32 stream;
++	__u32 reserved[7];
+ };
+ 
+ /**
+@@ -58,13 +61,15 @@ struct v4l2_subdev_format {
+  * @which: format type (from enum v4l2_subdev_format_whence)
+  * @pad: pad number, as reported by the media API
+  * @rect: pad crop rectangle boundaries
++ * @stream: stream number, defined in subdev routing
+  * @reserved: drivers and applications must zero this array
+  */
+ struct v4l2_subdev_crop {
+ 	__u32 which;
+ 	__u32 pad;
+ 	struct v4l2_rect rect;
+-	__u32 reserved[8];
++	__u32 stream;
++	__u32 reserved[7];
+ };
+ 
+ #define V4L2_SUBDEV_MBUS_CODE_CSC_COLORSPACE	0x00000001
+@@ -80,6 +85,7 @@ struct v4l2_subdev_crop {
+  * @code: format code (MEDIA_BUS_FMT_ definitions)
+  * @which: format type (from enum v4l2_subdev_format_whence)
+  * @flags: flags set by the driver, (V4L2_SUBDEV_MBUS_CODE_*)
++ * @stream: stream number, defined in subdev routing
+  * @reserved: drivers and applications must zero this array
+  */
+ struct v4l2_subdev_mbus_code_enum {
+@@ -88,7 +94,8 @@ struct v4l2_subdev_mbus_code_enum {
+ 	__u32 code;
+ 	__u32 which;
+ 	__u32 flags;
+-	__u32 reserved[7];
++	__u32 stream;
++	__u32 reserved[6];
+ };
+ 
+ /**
+@@ -101,6 +108,7 @@ struct v4l2_subdev_mbus_code_enum {
+  * @min_height: minimum frame height, in pixels
+  * @max_height: maximum frame height, in pixels
+  * @which: format type (from enum v4l2_subdev_format_whence)
++ * @stream: stream number, defined in subdev routing
+  * @reserved: drivers and applications must zero this array
+  */
+ struct v4l2_subdev_frame_size_enum {
+@@ -112,19 +120,22 @@ struct v4l2_subdev_frame_size_enum {
+ 	__u32 min_height;
+ 	__u32 max_height;
+ 	__u32 which;
+-	__u32 reserved[8];
++	__u32 stream;
++	__u32 reserved[7];
+ };
+ 
+ /**
+  * struct v4l2_subdev_frame_interval - Pad-level frame rate
+  * @pad: pad number, as reported by the media API
+  * @interval: frame interval in seconds
++ * @stream: stream number, defined in subdev routing
+  * @reserved: drivers and applications must zero this array
+  */
+ struct v4l2_subdev_frame_interval {
+ 	__u32 pad;
+ 	struct v4l2_fract interval;
+-	__u32 reserved[9];
++	__u32 stream;
++	__u32 reserved[8];
+ };
+ 
+ /**
+@@ -136,6 +147,7 @@ struct v4l2_subdev_frame_interval {
+  * @height: frame height in pixels
+  * @interval: frame interval in seconds
+  * @which: format type (from enum v4l2_subdev_format_whence)
++ * @stream: stream number, defined in subdev routing
+  * @reserved: drivers and applications must zero this array
+  */
+ struct v4l2_subdev_frame_interval_enum {
+@@ -146,7 +158,8 @@ struct v4l2_subdev_frame_interval_enum {
+ 	__u32 height;
+ 	struct v4l2_fract interval;
+ 	__u32 which;
+-	__u32 reserved[8];
++	__u32 stream;
++	__u32 reserved[7];
+ };
+ 
+ /**
+@@ -158,6 +171,7 @@ struct v4l2_subdev_frame_interval_enum {
+  *	    defined in v4l2-common.h; V4L2_SEL_TGT_* .
+  * @flags: constraint flags, defined in v4l2-common.h; V4L2_SEL_FLAG_*.
+  * @r: coordinates of the selection window
++ * @stream: stream number, defined in subdev routing
+  * @reserved: for future use, set to zero for now
+  *
+  * Hardware may use multiple helper windows to process a video stream.
+@@ -170,7 +184,8 @@ struct v4l2_subdev_selection {
+ 	__u32 target;
+ 	__u32 flags;
+ 	struct v4l2_rect r;
+-	__u32 reserved[8];
++	__u32 stream;
++	__u32 reserved[7];
+ };
+ 
+ /**
+@@ -188,6 +203,49 @@ struct v4l2_subdev_capability {
+ /* The v4l2 sub-device video device node is registered in read-only mode. */
+ #define V4L2_SUBDEV_CAP_RO_SUBDEV		0x00000001
+ 
++/* The v4l2 sub-device supports routing and multiplexed streams. */
++#define V4L2_SUBDEV_CAP_STREAMS			0x00000002
++
++/*
++ * Is the route active? An active route will start when streaming is enabled
++ * on a video node.
++ */
++#define V4L2_SUBDEV_ROUTE_FL_ACTIVE		(1U << 0)
++
++/**
++ * struct v4l2_subdev_route - A route inside a subdev
++ *
++ * @sink_pad: the sink pad index
++ * @sink_stream: the sink stream identifier
++ * @source_pad: the source pad index
++ * @source_stream: the source stream identifier
++ * @flags: route flags V4L2_SUBDEV_ROUTE_FL_*
++ * @reserved: drivers and applications must zero this array
++ */
++struct v4l2_subdev_route {
++	__u32 sink_pad;
++	__u32 sink_stream;
++	__u32 source_pad;
++	__u32 source_stream;
++	__u32 flags;
++	__u32 reserved[5];
++};
++
++/**
++ * struct v4l2_subdev_routing - Subdev routing information
++ *
++ * @which: configuration type (from enum v4l2_subdev_format_whence)
++ * @num_routes: the total number of routes in the routes array
++ * @routes: pointer to the routes array
++ * @reserved: drivers and applications must zero this array
++ */
++struct v4l2_subdev_routing {
++	__u32 which;
++	__u32 num_routes;
++	__u64 routes;
++	__u32 reserved[6];
++};
++
+ /* Backwards compatibility define --- to be removed */
+ #define v4l2_subdev_edid v4l2_edid
+ 
+@@ -203,6 +261,8 @@ struct v4l2_subdev_capability {
+ #define VIDIOC_SUBDEV_S_CROP			_IOWR('V', 60, struct v4l2_subdev_crop)
+ #define VIDIOC_SUBDEV_G_SELECTION		_IOWR('V', 61, struct v4l2_subdev_selection)
+ #define VIDIOC_SUBDEV_S_SELECTION		_IOWR('V', 62, struct v4l2_subdev_selection)
++#define VIDIOC_SUBDEV_G_ROUTING			_IOWR('V', 38, struct v4l2_subdev_routing)
++#define VIDIOC_SUBDEV_S_ROUTING			_IOWR('V', 39, struct v4l2_subdev_routing)
+ /* The following ioctls are identical to the ioctls in videodev2.h */
+ #define VIDIOC_SUBDEV_G_STD			_IOR('V', 23, v4l2_std_id)
+ #define VIDIOC_SUBDEV_S_STD			_IOW('V', 24, v4l2_std_id)
+-- 
+2.34.1
+

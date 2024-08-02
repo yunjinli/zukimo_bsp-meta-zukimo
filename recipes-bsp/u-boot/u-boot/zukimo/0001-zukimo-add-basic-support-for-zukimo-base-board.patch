@@ -1,0 +1,801 @@
+From 7a848d9ea47ba4346c852da6391b39cb2b8c5315 Mon Sep 17 00:00:00 2001
+From: Stefan Stuerke <stefan.stuerke@dreamchip.de>
+Date: Wed, 1 Mar 2023 17:58:31 +0100
+Subject: [PATCH 01/12] zukimo: add basic support for zukimo base board
+
+Upstream-Status: Pending
+
+---
+ arch/arm/Kconfig                    |   8 +
+ board/dct/zukimo/Kconfig            |  15 ++
+ board/dct/zukimo/MAINTAINERS        |   6 +
+ board/dct/zukimo/Makefile           |   6 +
+ board/dct/zukimo/zukimo.c           | 161 +++++++++++++
+ drivers/serial/Kconfig              |  15 ++
+ drivers/serial/Makefile             |   1 +
+ drivers/serial/dct_uart.c           | 348 ++++++++++++++++++++++++++++
+ drivers/serial/dct_uart_internal.h  | 100 ++++++++
+ include/dm/platform_data/dct_uart.h |  22 ++
+ 10 files changed, 682 insertions(+)
+ create mode 100644 board/dct/zukimo/Kconfig
+ create mode 100644 board/dct/zukimo/MAINTAINERS
+ create mode 100644 board/dct/zukimo/Makefile
+ create mode 100644 board/dct/zukimo/zukimo.c
+ create mode 100644 drivers/serial/dct_uart.c
+ create mode 100644 drivers/serial/dct_uart_internal.h
+ create mode 100644 include/dm/platform_data/dct_uart.h
+
+diff --git a/arch/arm/Kconfig b/arch/arm/Kconfig
+index bd7fffcce0..9550622ffd 100644
+--- a/arch/arm/Kconfig
++++ b/arch/arm/Kconfig
+@@ -1308,6 +1308,13 @@ config TARGET_CORSTONE1000
+ 	select PL01X_SERIAL
+ 	select DM
+ 
++config TARGET_ZUKIMO
++	bool "Support Dream Chip's Zukimo board"
++	select ARM64
++	select GICV3
++	select GPIO_EXTRA_HEADER
++	select DCT_SERIAL
++
+ config TARGET_TOTAL_COMPUTE
+ 	bool "Support Total Compute Platform"
+ 	select ARM64
+@@ -2265,6 +2272,7 @@ source "board/Marvell/octeontx/Kconfig"
+ source "board/Marvell/octeontx2/Kconfig"
+ source "board/armltd/vexpress/Kconfig"
+ source "board/armltd/vexpress64/Kconfig"
++source "board/dct/zukimo/Kconfig"
+ source "board/cortina/presidio-asic/Kconfig"
+ source "board/broadcom/bcmns3/Kconfig"
+ source "board/cavium/thunderx/Kconfig"
+diff --git a/board/dct/zukimo/Kconfig b/board/dct/zukimo/Kconfig
+new file mode 100644
+index 0000000000..c57a3b21e7
+--- /dev/null
++++ b/board/dct/zukimo/Kconfig
+@@ -0,0 +1,15 @@
++if TARGET_ZUKIMO
++
++config SYS_BOARD
++	default "zukimo"
++
++config SYS_VENDOR
++	default "dct"
++
++config SYS_CONFIG_NAME
++	string "Board configuration name"
++
++config LNX_KRNL_IMG_TEXT_OFFSET_BASE
++    default 0x0
++
++endif
+diff --git a/board/dct/zukimo/MAINTAINERS b/board/dct/zukimo/MAINTAINERS
+new file mode 100644
+index 0000000000..ddc57d34bf
+--- /dev/null
++++ b/board/dct/zukimo/MAINTAINERS
+@@ -0,0 +1,6 @@
++ZUKIMO BOARD
++M:	zukimo-bsp-maintainer@dreamchip.de
++S:	Maintained
++F:	board/dct/zukimo
++F:	include/configs/zukimo.h
++F:	configs/zukimo_defconfig
+diff --git a/board/dct/zukimo/Makefile b/board/dct/zukimo/Makefile
+new file mode 100644
+index 0000000000..eaf66c4e98
+--- /dev/null
++++ b/board/dct/zukimo/Makefile
+@@ -0,0 +1,6 @@
++# SPDX-License-Identifier: GPL-2.0+
++#
++# (C) Copyright 2023
++# Stefan Stürke, Dream Chip Technologies, GmbH, stefan.stuerke@dreamchip.de
++
++obj-y	:= zukimo.o
+diff --git a/board/dct/zukimo/zukimo.c b/board/dct/zukimo/zukimo.c
+new file mode 100644
+index 0000000000..f72b55b6d2
+--- /dev/null
++++ b/board/dct/zukimo/zukimo.c
+@@ -0,0 +1,161 @@
++// SPDX-License-Identifier: GPL-2.0+
++/*
++ * (C) Copyright 2013-2023
++ * David Feng <fenghua@phytium.com.cn>
++ * Sharma Bhupesh <bhupesh.sharma@freescale.com>
++ * Stefan Stürke <stefan.stuerke@dreamchip.de>
++ */
++#include <common.h>
++#include <cpu_func.h>
++#include <dm.h>
++#include <init.h>
++#include <malloc.h>
++#include <errno.h>
++#include <net.h>
++#include <netdev.h>
++#include <asm/global_data.h>
++#include <asm/io.h>
++#include <linux/compiler.h>
++#include <dm/platform_data/dct_uart.h>
++#include <asm/armv8/mmu.h>
++#include <asm/system.h>
++
++static struct mm_region zukimo_mem_map[] = {
++	{
++		/* MMIO regions */
++		.virt = 0x0UL,
++		.phys = 0x0UL,
++		.size = PHYS_SRAM,		/* calculate size based of start address of next block */
++		.attrs = PTE_BLOCK_MEMTYPE(MT_DEVICE_NGNRNE) |
++			 PTE_BLOCK_NON_SHARE |
++			 PTE_BLOCK_PXN | PTE_BLOCK_UXN
++	},
++	{
++		/* SRAM */
++		.virt = PHYS_SRAM,
++		.phys = PHYS_SRAM,
++		.size = PHYS_SRAM_SIZE,
++		.attrs = PTE_BLOCK_MEMTYPE(MT_NORMAL) |
++			 PTE_BLOCK_INNER_SHARE
++	},
++	{
++		/* MMIO registers */
++		.virt = (PHYS_SRAM + PHYS_SRAM_SIZE),
++		.phys = (PHYS_SRAM + PHYS_SRAM_SIZE),
++		.size = (PHYS_SDRAM_1 - (PHYS_SRAM + PHYS_SRAM_SIZE)),
++		.attrs = PTE_BLOCK_MEMTYPE(MT_DEVICE_NGNRNE) |
++			 PTE_BLOCK_NON_SHARE |
++			 PTE_BLOCK_PXN | PTE_BLOCK_UXN
++	},
++#if CONFIG_NR_DRAM_BANKS >= 1
++	{
++		/* 2 GB DRAM */
++		.virt = PHYS_SDRAM_1,
++		.phys = PHYS_SDRAM_1,
++		.size = PHYS_SDRAM_1_SIZE,
++		.attrs = PTE_BLOCK_MEMTYPE(MT_NORMAL) |
++			 PTE_BLOCK_INNER_SHARE
++	},
++#endif
++#if CONFIG_NR_DRAM_BANKS >= 2
++	{
++		/* MMIO registers */
++		.virt = (PHYS_SDRAM_1 + PHYS_SDRAM_1_SIZE),
++		.phys = (PHYS_SDRAM_1 + PHYS_SDRAM_1_SIZE),
++		.size = (PHYS_SDRAM_2 - (PHYS_SDRAM_1 + PHYS_SDRAM_1_SIZE)),
++		.attrs = PTE_BLOCK_MEMTYPE(MT_DEVICE_NGNRNE) |
++			 PTE_BLOCK_NON_SHARE |
++			 PTE_BLOCK_PXN | PTE_BLOCK_UXN
++	},
++	{
++		/* 6 GB DRAM */
++		.virt = PHYS_SDRAM_2,
++		.phys = PHYS_SDRAM_2,
++		.size = PHYS_SDRAM_2_SIZE,
++		.attrs = PTE_BLOCK_MEMTYPE(MT_NORMAL) |
++			 PTE_BLOCK_INNER_SHARE
++	},
++#endif
++	{
++		/* List terminator */
++		0,
++	}
++};
++
++struct mm_region *mem_map = zukimo_mem_map;
++
++/* This function gets replaced by platforms supporting PCIe.
++ * The replacement function, eg. on Juno, initialises the PCIe bus.
++ */
++__weak void zukimo_pcie_init(void)
++{
++}
++
++extern void relocate_secure_section(void);
++int board_init(void)
++{
++#ifdef CONFIG_ARMV8_PSCI
++	/*
++	 * do_ipc_send and do_ipc_send_receive need
++	 * populated secure section
++	 *
++	 */
++	relocate_secure_section();
++#endif
++	zukimo_pcie_init();
++	return 0;
++}
++
++int dram_init(void)
++{
++#if CONFIG_NR_DRAM_BANKS == 0
++	gd->ram_size = PHYS_SRAM_SIZE;
++#else
++	gd->ram_size = PHYS_SDRAM_1_SIZE;
++#endif
++	return 0;
++}
++
++int dram_init_banksize(void)
++{
++#if CONFIG_NR_DRAM_BANKS >= 1
++	gd->bd->bi_dram[0].start = PHYS_SDRAM_1;
++	gd->bd->bi_dram[0].size = PHYS_SDRAM_1_SIZE;
++#endif
++#if CONFIG_NR_DRAM_BANKS >= 2
++	gd->bd->bi_dram[1].start = PHYS_SDRAM_2;
++	gd->bd->bi_dram[1].size = PHYS_SDRAM_2_SIZE;
++#endif
++
++	return 0;
++}
++
++#ifdef CONFIG_OF_BOARD
++
++void *board_fdt_blob_setup(int *err)
++{
++	*err = -ENXIO;
++	return NULL;
++}
++#endif
++
++void reset_cpu(void)
++{
++}
++
++/*
++ * Board specific ethernet initialization routine.
++ */
++int board_eth_init(struct bd_info *bis)
++{
++	int rc = 0;
++#ifndef CONFIG_DM_ETH
++#ifdef CONFIG_SMC91111
++	rc = smc91111_initialize(0, CONFIG_SMC91111_BASE);
++#endif
++#ifdef CONFIG_SMC911X
++	rc = smc911x_initialize(0, CONFIG_SMC911X_BASE);
++#endif
++#endif
++	return rc;
++}
+diff --git a/drivers/serial/Kconfig b/drivers/serial/Kconfig
+index bb5083201b..a634ecfff7 100644
+--- a/drivers/serial/Kconfig
++++ b/drivers/serial/Kconfig
+@@ -381,6 +381,15 @@ config DEBUG_UART_PL011
+ 	  work. The driver will be available until the real driver model
+ 	  serial is running.
+ 
++config DEBUG_UART_DCT
++	bool "dctuart0"
++	depends on DCT_SERIAL
++	help
++	  Select this to enable a debug UART using the dct driver for uart 0
++	  with the DCT UART type. You will need to provide parameters to make
++	  this work. The driver will be available until the real driver model
++	  serial is running.
++
+ config DEBUG_UART_PIC32
+ 	bool "Microchip PIC32"
+ 	depends on PIC32_SERIAL
+@@ -810,6 +819,12 @@ config PL01X_SERIAL
+ 	help
+ 	  Select this to enable a UART for platforms using PL010 or PL011.
+ 
++config DCT_SERIAL
++	bool "Dream Chip serial driver"
++	depends on DM_SERIAL
++	help
++	  Select this to enable a UART for platforms using the DCT UART IP
++
+ config ROCKCHIP_SERIAL
+ 	bool "Rockchip on-chip UART support"
+ 	depends on DM_SERIAL
+diff --git a/drivers/serial/Makefile b/drivers/serial/Makefile
+index 01fef3f323..7407c74a53 100644
+--- a/drivers/serial/Makefile
++++ b/drivers/serial/Makefile
+@@ -11,6 +11,7 @@ endif
+ 
+ obj-$(CONFIG_PL01X_SERIAL) += serial_pl01x.o
+ obj-$(CONFIG_PL011_SERIAL) += serial_pl01x.o
++obj-$(CONFIG_DCT_SERIAL) += dct_uart.o
+ obj-$(CONFIG_$(SPL_)SYS_NS16550_SERIAL) += serial_ns16550.o
+ 
+ obj-$(CONFIG_ALTERA_UART) += altera_uart.o
+diff --git a/drivers/serial/dct_uart.c b/drivers/serial/dct_uart.c
+new file mode 100644
+index 0000000000..9f41840f97
+--- /dev/null
++++ b/drivers/serial/dct_uart.c
+@@ -0,0 +1,348 @@
++/*
++ * (C) Copyright 2000
++ * Rob Taylor, Flying Pig Systems. robt@flyingpig.com.
++ *
++ * (C) Copyright 2004
++ * ARM Ltd.
++ * Philippe Robin, <philippe.robin@arm.com>
++ *
++ * (C) Copyright 2016-2023
++ * Dream Chip Technologies
++ * Ralph Hempel, <ralph.hempel@dreamchip.de>
++ * Stefan Stürke, <stefan.stuerke@dreamchip.de>
++ *
++ * SPDX-License-Identifier:	GPL-2.0+
++ */
++
++/* Simple U-Boot driver for the Dream Chip UARTs*/
++
++#include <common.h>
++#include <dm.h>
++#include <clk.h>
++#include <errno.h>
++#include <watchdog.h>
++#include <asm/io.h>
++#include <serial.h>
++#include <dm/device_compat.h>
++#include <dm/platform_data/dct_uart.h>
++#include <linux/compiler.h>
++#include "dct_uart_internal.h"
++#include <fdtdec.h>
++
++DECLARE_GLOBAL_DATA_PTR;
++
++static int dct_uart_putc(struct dct_uart_regs *regs, char c)
++{
++	/* Wait until there is space in the FIFO */
++	if ((readl(&regs->byte_cnt) & TX_FREE_SIZE) == 0)
++		return -EAGAIN;
++
++	/* Send the character */
++	writel(c, &regs->data);
++
++	return 0;
++}
++
++static int dct_uart_getc(struct dct_uart_regs *regs)
++{
++	unsigned int data;
++
++	/* Wait until there is data in the FIFO */
++	if ((readl(&regs->byte_cnt) & RX_BYTE_COUNT) == 0)
++		return -EAGAIN;
++
++	data = readl(&regs->data);
++
++	/* Check for an error flag */
++	if (readl(&regs->ris) &
++		(RIS_PARITY_ERROR | RIS_RX_BUF_OVFLW | RIS_RX_BUF_UNFLW)) {
++		/* Clear the error */
++		writel(ICR_PARITY_ERROR | ICR_RX_BUF_OVFLW |
++				ICR_RX_BUF_UNFLW, &regs->icr);
++		return -1;
++	}
++
++	return (int) data;
++}
++
++static int dct_uart_tstc(struct dct_uart_regs *regs)
++{
++	schedule();
++	return !((readl(&regs->byte_cnt) & RX_BYTE_COUNT) == 0);
++}
++
++static int dct_uart_generic_serial_init(struct dct_uart_regs *regs)
++{
++	/* disable everything */
++	writel(RESET_MODULE, &regs->cmd);
++
++	return 0;
++}
++
++static int dct_uart_generic_setbrg(struct dct_uart_regs *regs,
++				int clock, int baudrate)
++{
++	unsigned int divisor;
++
++	writel(FLUSH_TX_BUF | FLUSH_RX_BUF, &regs->cmd);
++
++	/* disable everything */
++	writel(RESET_MODULE, &regs->cmd);
++
++	switch (baudrate) {
++	case 1200:
++	case 2400:
++	case 4800:
++	case 9600:
++	case 19200:
++	case 38400:
++	case 57600:
++	case 115200:
++		divisor = DIV_ROUND_CLOSEST(clock + (8 * baudrate), (16 * baudrate));
++		break;
++	default:
++		divisor = DIV_ROUND_CLOSEST(clock, (16 * 38400));
++	}
++
++	/*
++	 * 8 bits, 1 stop bit, no parity
++	 */
++	writel((divisor << 16) | 0xC0, &regs->ctrl);
++
++	/* Finally, enable the UART */
++	writel(ENABLE_MODULE, &regs->cmd);
++
++	return 0;
++}
++
++#ifndef CONFIG_DM_SERIAL
++static void dct_uart_serial_init_baud(int clock, int baudrate)
++{
++	struct dct_uart_regs *regs = (struct dct_uart_regs *)CONFIG_SYS_SERIAL0;
++
++	dct_uart_generic_serial_init(regs);
++	dct_uart_generic_setbrg(regs, clock, baudrate);
++}
++
++static void dct_uart_serial_putc(const char c)
++{
++	struct dct_uart_regs *regs = (struct dct_uart_regs *)CONFIG_SYS_SERIAL0;
++
++	if (c == '\n')
++		while (dct_uart_putc(regs, '\r') == -EAGAIN)
++			;
++
++	while (dct_uart_putc(regs, c) == -EAGAIN)
++		;
++}
++
++static int dct_uart_serial_getc(void)
++{
++	struct dct_uart_regs *regs = (struct dct_uart_regs *)CONFIG_SYS_SERIAL0;
++
++	while (1) {
++		int ch = dct_uart_getc(regs);
++
++		if (ch == -EAGAIN) {
++			schedule();
++			continue;
++		}
++
++		return ch;
++	}
++}
++
++static int dct_uart_serial_tstc(void)
++{
++	struct dct_uart_regs *regs = (struct dct_uart_regs *)CONFIG_SYS_SERIAL0;
++
++	return dct_uart_tstc(regs);
++}
++
++static void dct_uart_serial_setbrg(void)
++{
++	struct dct_uart_regs *regs = (struct dct_uart_regs *)CONFIG_SYS_SERIAL0;
++
++	/*
++	 * Flush FIFO and wait for non-busy before changing baudrate to avoid
++	 * crap in console
++	 */
++	while (!((readl(&regs->byte_cnt) & TX_FREE_SIZE) == TX_SIZE))
++		schedule();
++	dct_uart_serial_init_baud(ZUKIMO_UART_CLOCK, gd->baudrate);
++}
++
++int dct_uart_init(void)
++{
++	dct_uart_serial_init_baud(ZUKIMO_UART_CLOCK, CONFIG_BAUDRATE);
++
++	return 0;
++}
++
++static struct serial_device dct_uart_drv = {
++	.name	= "dct_uart",
++	.start	= dct_uart_init,
++	.stop	= NULL,
++	.setbrg	= dct_uart_serial_setbrg,
++	.putc	= dct_uart_serial_putc,
++	.puts	= default_serial_puts,
++	.getc	= dct_uart_serial_getc,
++	.tstc	= dct_uart_serial_tstc,
++};
++
++void dct_uart_initialize(void)
++{
++	serial_register(&dct_uart_drv);
++}
++
++__weak struct serial_device *default_serial_console(void)
++{
++	return &dct_uart_drv;
++}
++
++#endif /* nCONFIG_DM_SERIAL */
++
++#ifdef CONFIG_DM_SERIAL
++
++struct dct_uart_priv {
++	struct dct_uart_regs *regs;
++};
++
++static int dct_uart_serial_setbrg(struct udevice *dev, int baudrate)
++{
++	struct dct_uart_serial_plat *plat = dev_get_plat(dev);
++	struct dct_uart_priv *priv = dev_get_priv(dev);
++
++	dct_uart_generic_setbrg(priv->regs, plat->clock, baudrate);
++
++	return 0;
++}
++
++static int dct_uart_serial_probe(struct udevice *dev)
++{
++	struct dct_uart_serial_plat *plat = dev_get_plat(dev);
++	struct dct_uart_priv *priv = dev_get_priv(dev);
++
++	priv->regs = (struct dct_uart_regs *)plat->base;
++	return dct_uart_generic_serial_init(priv->regs);
++}
++
++static int dct_uart_serial_getc(struct udevice *dev)
++{
++	struct dct_uart_priv *priv = dev_get_priv(dev);
++
++	return dct_uart_getc(priv->regs);
++}
++
++static int dct_uart_serial_putc(struct udevice *dev, const char ch)
++{
++	struct dct_uart_priv *priv = dev_get_priv(dev);
++
++	return dct_uart_putc(priv->regs, ch);
++}
++
++static int dct_uart_serial_pending(struct udevice *dev, bool input)
++{
++	struct dct_uart_priv *priv = dev_get_priv(dev);
++	unsigned int byte_cnt = readl(&priv->regs->byte_cnt);
++
++	if (input)
++		return dct_uart_tstc(priv->regs);
++	else
++		return ((byte_cnt & TX_FREE_SIZE) == 0) ? 0 : 1;
++}
++
++static const struct dm_serial_ops dct_uart_serial_ops = {
++	.putc = dct_uart_serial_putc,
++	.pending = dct_uart_serial_pending,
++	.getc = dct_uart_serial_getc,
++	.setbrg = dct_uart_serial_setbrg,
++};
++
++#if CONFIG_IS_ENABLED(OF_CONTROL)
++static const struct udevice_id dct_uart_serial_id[] = {
++	{.compatible = "dct,dct_uart", .data = 0},
++	{}
++};
++
++static int dct_uart_serial_of_to_plat(struct udevice *dev)
++{
++	struct dct_uart_serial_plat *plat = dev_get_plat(dev);
++	struct clk clk;
++	fdt_addr_t addr;
++	int ret;
++
++	addr = dev_read_addr(dev);
++	if (addr == FDT_ADDR_T_NONE)
++		return -EINVAL;
++
++	plat->base = addr;
++    // read "clock" property of serial node first. If not present, default to
++    // 100MHz input clock:
++	plat->clock = dev_read_u32_default(dev, "clock", ZUKIMO_UART_CLOCK);
++
++    // Try to read input clock from first entry of "clocks" property
++    // If not present fall back to clock, set above.
++	ret = clk_get_by_index(dev, 0, &clk);
++	if (!ret) {
++		ret = clk_enable(&clk);
++		if (ret && ret != -ENOSYS) {
++			dev_err(dev, "failed to enable clock\n");
++			return ret;
++		}
++
++		plat->clock = clk_get_rate(&clk);
++		if (IS_ERR_VALUE(plat->clock)) {
++			dev_err(dev, "failed to get rate\n");
++			return plat->clock;
++		}
++		debug("%s: CLK %ld\n", __func__, plat->clock);
++	}
++
++	return 0;
++}
++#endif
++
++U_BOOT_DRIVER(dct_uart) = {
++	.name	= "dct_uart",
++	.id	= UCLASS_SERIAL,
++	.of_match = of_match_ptr(dct_uart_serial_id),
++	.of_to_plat = of_match_ptr(dct_uart_serial_of_to_plat),
++	.plat_auto = sizeof(struct dct_uart_serial_plat),
++	.probe = dct_uart_serial_probe,
++	.ops	= &dct_uart_serial_ops,
++	.flags = DM_FLAG_PRE_RELOC,
++	.priv_auto = sizeof(struct dct_uart_priv),
++};
++
++#endif
++
++#if defined(CONFIG_DEBUG_UART_DCT)
++
++#include <debug_uart.h>
++
++static void _debug_uart_init(void)
++{
++#ifndef CONFIG_DEBUG_UART_SKIP_INIT
++	struct dct_uart_regs *regs = (struct dct_uart_regs *)CONFIG_DEBUG_UART_BASE;
++
++	dct_uart_generic_serial_init(regs);
++	dct_uart_generic_setbrg(regs, CONFIG_DEBUG_UART_CLOCK, CONFIG_BAUDRATE);
++#endif
++}
++
++static inline void _debug_uart_putc(int c)
++{
++	struct dct_uart_regs *regs = (struct dct_uart_regs *)CONFIG_DEBUG_UART_BASE;
++
++	if (c == '\n')
++		while (dct_uart_putc(regs, '\r') == -EAGAIN)
++			;
++
++	while (dct_uart_putc(regs, c) == -EAGAIN)
++		;
++}
++
++DEBUG_UART_FUNCS
++
++#endif
+diff --git a/drivers/serial/dct_uart_internal.h b/drivers/serial/dct_uart_internal.h
+new file mode 100644
+index 0000000000..b500031f44
+--- /dev/null
++++ b/drivers/serial/dct_uart_internal.h
+@@ -0,0 +1,100 @@
++/*
++ * (C) Copyright 2003, 2004
++ * ARM Ltd.
++ * Philippe Robin, <philippe.robin@arm.com>
++ *
++ * (C) Copyright 2016-2023
++ * Dream Chip Technologies
++ * Ralph Hempel, <ralph.hempel@dreamchip.de>
++ *
++ * SPDX-License-Identifier:	GPL-2.0+
++ */
++
++/*
++ * Dream Chip UART
++ */
++
++#include <common.h>
++
++#ifndef __DCT_UART_INTERNAL__
++#define __DCT_UART_INTERNAL__
++
++#ifndef __ASSEMBLY__
++
++struct dct_uart_regs {
++	u32 data;		/* 0x00 RX/TX data */
++	u32 byte_cnt;		/* 0x04 byte count */
++	u32 irq_level;		/* 0x08 IRQ level */
++	u32 cmd;		/* 0x0C command */
++	u32 ctrl;		/* 0x10 control */
++	u32 msr;		/* 0x14 modem status register */
++	u32 mcr;		/* 0x18 modem control register */
++	u32 d1;			/* 0x1C dummy */
++	u32 imr;		/* 0x20 interrupt mask register */
++	u32 ris;		/* 0x24 raw interrupt status register */
++	u32 mis;		/* 0x28 masked interrupt status register */
++	u32 icr;		/* 0x2C interrupt clear register */
++	u32 isr;		/* 0x30 interrupt set register */
++};
++
++#endif
++
++/* 0x04 byte count */
++#define TX_FREE_SIZE                    0x00ff
++#define RX_BYTE_COUNT                   0xff00
++#define TX_SIZE                         4
++
++/* 0x0C command */
++#define ENABLE_MODULE                   BIT(3) /* Enable module after reset to start processing. */
++#define RESET_MODULE                    BIT(2) /* If set to 1, all internal registers and the buffers are reset. \
++                                                    The configuration registers keep the previous value. */
++#define FLUSH_TX_BUF                    BIT(1) /* If set to 1, the transmit buffer UART_TX_BUFF is reset. */
++#define FLUSH_RX_BUF                    BIT(0) /* If set to 1, the receive buffer UART_RX_BUFF is reset. */
++
++/* 0x24 raw interrupt status register */
++#define RIS_PARITY_ERROR                BIT(5) /* receive buffer overflow interrupt. */
++#define RIS_RX_BUF_OVFLW                BIT(4) /* receive buffer overflow interrupt. */
++#define RIS_RX_BUF_UNFLW                BIT(3) /* receive buffer underflow interrupt. */
++#define RIS_RX_IRQ                      BIT(2) /* RECEIVE interrupt. */
++#define RIS_TX_BUF_OVFLW                BIT(1) /* transmit buffer overflow interrupt. */
++#define RIS_TX_IRQ                      BIT(0) /* TRANSMIT interrupt. */
++
++/* 0x2C interrupt clear register */
++#define ICR_PARITY_ERROR                BIT(5) /* Clear for the receive buffer overflow interrupt. */
++#define ICR_RX_BUF_OVFLW                BIT(4) /* Clear for the receive buffer overflow interrupt. */
++#define ICR_RX_BUF_UNFLW                BIT(3) /* Clear for the receive buffer underflow interrupt. */
++#define ICR_RX_IRQ                      BIT(2) /* Clear for the RECEIVE interrupt. */
++#define ICR_TX_BUF_OVFLW                BIT(1) /* Clear for the transmit buffer overflow interrupt. */
++#define ICR_TX_IRQ                      BIT(0) /* Clear for the TRANSMIT interrupt. */
++
++
++/* 0x10 control */
++#define CLK_DIVISOR                     GENMASK(31,16) /* Clock divisor \
++                                                       CLK_DIVISOR = source clock / ( 16 * baud rate ) \
++                                                       NOTE: Use only even values >= 2 for CLK_DIVISOR. */
++#define CHAR_LEN                        GENMASK(8,6) /* Character length \
++                                                       00: 5 bits \
++                                                       01: 6 bits \
++                                                       10: 7 bits \
++                                                       11: 8 bits */
++#define STOP_NR                         BIT(5) /* Number of stop bits for transmission \
++                                                    0: One stop bit \
++                                                    1: If CHAR_LEN = 5 bits     => 1.5 stop bits \
++                                                    If CHAR_LEN = 6, 7, 8 bits  => 2 stop bits */
++#define PARITY_EN                       (1 << 4) /* Parity enable \
++                                                    0: No parity bit is generated in transmit direction or checked in receive direction. \
++                                                    1: A parity bit is generated after the data bits in transmit direction or checked in \
++                                                       receive direction. The parity bit is used to generate an even or odd number of 1s \
++                                                       for the sum of all data bits and the parity bit. */
++#define PARITY_SENSE                    (1 << 3) /* Parity sense. \
++                                                    0: Odd parity \
++                                                    1: Even parity \
++                                                    NOTE: Only applies when parity is enabled (PARITY_EN) */
++#define PARITY_STICK                    (1 << 2) /* Stick parity \
++                                                    0: Stick parity disabled \
++                                                    1: When PARITY_EN = 1 and PARITY_SENSE = 1 then always a logic 0 is transmitted or \
++                                                    checked as parity bit. \
++                                                    When PARITY_EN = 1 and PARITY_SENSE = 0 then always a logic 1 is transmitted or \
++                                                    checked as parity bit. */
++
++#endif
+diff --git a/include/dm/platform_data/dct_uart.h b/include/dm/platform_data/dct_uart.h
+new file mode 100644
+index 0000000000..2f3183480f
+--- /dev/null
++++ b/include/dm/platform_data/dct_uart.h
+@@ -0,0 +1,22 @@
++/*
++ * Copyright (c) 2014 Google, Inc
++ * Copyright (c) 2016-2023 Dream Chip Technologies
++ *
++ * SPDX-License-Identifier:	GPL-2.0+
++ */
++
++#ifndef __serial_dct_uart_h
++#define __serial_dct_uart_h
++
++/*
++ *Information about a serial port
++ *
++ * @base: Register base address
++ * @clock: Input clock rate, used for calculating the baud rate divisor
++ */
++struct dct_uart_serial_plat {
++	unsigned long base;
++	unsigned long clock;
++};
++
++#endif
+-- 
+2.34.1
+
