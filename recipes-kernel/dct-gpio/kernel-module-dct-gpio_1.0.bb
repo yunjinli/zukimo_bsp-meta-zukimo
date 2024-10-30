@@ -8,7 +8,7 @@ inherit module
 
 # ZUK_REPO_* vars are defined in ../../conf/machine/include/repovars.inc
 SRCREV = "${ZUK_REPO_SRCREV_GPIO}"
-SRC_URI = "${ZUK_REPO_URLBASE}/${ZUK_REPO_NAME_GPIO};protocol=${ZUK_REPO_PROTOCOL};branch=main"
+SRC_URI = "${ZUK_REPO_URLBASE}/${ZUK_REPO_NAME_GPIO};protocol=${ZUK_REPO_PROTOCOL};branch=${ZUK_REPO_BRANCH_GPIO}"
 S = "${WORKDIR}/git/linux"
 
 EXTRA_OEMAKE += "O=${STAGING_KERNEL_BUILDDIR}"

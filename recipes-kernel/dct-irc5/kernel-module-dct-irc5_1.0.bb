@@ -10,7 +10,7 @@ inherit module
 
 # ZUK_REPO_* vars are defined in ../../conf/machine/include/repovars.inc
 SRCREV = "${ZUK_REPO_SRCREV_IRC5}"
-SRC_URI = "${ZUK_REPO_URLBASE}/${ZUK_REPO_NAME_IRC5};protocol=${ZUK_REPO_PROTOCOL};branch=main"
+SRC_URI = "${ZUK_REPO_URLBASE}/${ZUK_REPO_NAME_IRC5};protocol=${ZUK_REPO_PROTOCOL};branch=${ZUK_REPO_BRANCH_IRC5}"
 
 S = "${WORKDIR}/git/linux"
 

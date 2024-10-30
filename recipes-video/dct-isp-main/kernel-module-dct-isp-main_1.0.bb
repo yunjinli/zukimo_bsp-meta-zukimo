@@ -9,7 +9,7 @@ inherit module
 
 # ZUK_REPO_* vars are defined in ../../conf/machine/include/repovars.inc
 SRCREV = "${ZUK_REPO_SRCREV_ISP_MAIN}"
-SRC_URI = "${ZUK_REPO_URLBASE}/${ZUK_REPO_NAME_ISP_MAIN};protocol=${ZUK_REPO_PROTOCOL};branch=main"
+SRC_URI = "${ZUK_REPO_URLBASE}/${ZUK_REPO_NAME_ISP_MAIN};protocol=${ZUK_REPO_PROTOCOL};branch=${ZUK_REPO_BRANCH_ISP_MAIN}"
 S = "${WORKDIR}/git/linux"
 
 # The kernel makefile needs to contain an entry to pick up the header
