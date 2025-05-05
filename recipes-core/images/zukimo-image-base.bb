@@ -23,6 +23,7 @@ IMAGE_INSTALL:append = "            \
     packagegroup-zukimo-system      \
     packagegroup-zukimo-net         \
     gen-revision-file               \
+    radar-sdk                       \
 "
 
 # Disable nfs server, when needed add kernel config for nfs fs

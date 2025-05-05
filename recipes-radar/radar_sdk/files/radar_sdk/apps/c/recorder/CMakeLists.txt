@@ -1,0 +1,2 @@
+add_executable(app_recorder app_recorder.c)
+target_link_libraries(app_recorder sdk_radar sdk_avian app_common)

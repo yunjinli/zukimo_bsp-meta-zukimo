@@ -1,0 +1,25 @@
+/****************************************************************************\
+* Copyright (C) 2020 Infineon Technologies
+*
+* THIS CODE AND INFORMATION ARE PROVIDED "AS IS" WITHOUT WARRANTY OF ANY
+* KIND, EITHER EXPRESSED OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE
+* IMPLIED WARRANTIES OF MERCHANTABILITY AND/OR FITNESS FOR A
+* PARTICULAR PURPOSE.
+*
+\****************************************************************************/
+
+#define FN_MODULE_RADAR_GET_CONFIG              0x00
+#define FN_MODULE_RADAR_SET_CONFIG              0x00
+#define FN_MODULE_RADAR_GET_SEQUENCE            0x01
+#define FN_MODULE_RADAR_SET_SEQUENCE            0x01
+#define FN_MODULE_RADAR_RESET                   0x02
+#define FN_MODULE_RADAR_CONFIGURE               0x03
+#define FN_MODULE_RADAR_GET_DATA_PROPERTIES     0x04
+#define FN_MODULE_RADAR_GET_RADAR_INFO          0x05
+#define FN_MODULE_RADAR_START_MEASUREMENT       0x06
+#define FN_MODULE_RADAR_STOP_MEASUREMENT        0x07
+#define FN_MODULE_RADAR_DO_MEASUREMENT          0x08
+#define FN_MODULE_RADAR_GET_PROCESSING_STAGES   0x09
+#define FN_MODULE_RADAR_SET_PROCESSING_STAGES   0x09
+#define FN_MODULE_RADAR_GET_CALIBRATION         0x0A
+#define FN_MODULE_RADAR_SET_CALIBRATION         0x0A

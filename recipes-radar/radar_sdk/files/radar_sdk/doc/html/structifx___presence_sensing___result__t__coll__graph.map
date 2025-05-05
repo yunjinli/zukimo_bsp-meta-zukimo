@@ -1,0 +1,6 @@
+<map id="ifx_PresenceSensing_Result_t" name="ifx_PresenceSensing_Result_t">
+<area shape="rect" id="node1" title="Result structure for Presence Sensing algorithm." alt="" coords="68,184,224,225"/>
+<area shape="rect" id="node2" href="$structifx___matrix___r__s.html" title="Defines the structure for a two&#45;dimensional floating point data array." alt="" coords="5,95,124,121"/>
+<area shape="rect" id="node3" href="$structifx___matrix___c__s.html" title="Defines the structure for a two&#45;dimensional Complex data array." alt="" coords="169,95,288,121"/>
+<area shape="rect" id="node4" href="$structifx___complex__s.html" title="Defines the structure for Complex data core parameters." alt="" coords="169,5,288,32"/>
+</map>

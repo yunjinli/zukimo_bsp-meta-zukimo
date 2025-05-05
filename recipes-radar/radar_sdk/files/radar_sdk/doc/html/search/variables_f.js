@@ -1,0 +1,25 @@
+var searchData=
+[
+  ['sample_2131',['sample',['../structifx___o_s_c_f_a_r___config__t.html#ab5035e101e6956d15d8cae9030735e5a',1,'ifx_OSCFAR_Config_t']]],
+  ['sample_5frate_5fhz_2132',['sample_rate_Hz',['../structifx___avian___config__t.html#a572bb1e1816656cca9acc378ea59f2a6',1,'ifx_Avian_Config_t::sample_rate_Hz()'],['../structifx___avian___metrics___limits__t.html#ab655b2c782754cd6f0ee6de8aaeafc41',1,'ifx_Avian_Metrics_Limits_t::sample_rate_Hz()'],['../structifx___avian___metrics__t.html#a572bb1e1816656cca9acc378ea59f2a6',1,'ifx_Avian_Metrics_t::sample_rate_Hz()']]],
+  ['sample_5frate_5frange_5fhz_2133',['sample_rate_range_Hz',['../structifx___avian___c_w___config__t.html#a73a2d54c0c20eda3a98afe467f33c1e3',1,'ifx_Avian_CW_Config_t']]],
+  ['sample_5ftime_2134',['sample_time',['../structifx___avian___a_d_c___config__t.html#aa047d385196512e695cf6d27feb2d092',1,'ifx_Avian_ADC_Config_t']]],
+  ['samplerate_5fhz_2135',['samplerate_Hz',['../structifx___avian___a_d_c___config__t.html#a0c48c3159a7527bc27f14d11390e3ac8',1,'ifx_Avian_ADC_Config_t']]],
+  ['samples_5fper_5fchirp_2136',['samples_per_chirp',['../structifx___r_a_i___opt___config__s.html#a734085fed2df9e5129fb1f5a34caf08c',1,'ifx_RAI_Opt_Config_s']]],
+  ['scale_2137',['scale',['../structifx___window___config__t.html#a5b61c1f5ad9e22b746a4e5fcc756fef5',1,'ifx_Window_Config_t']]],
+  ['search_5fzone_5fend_2138',['search_zone_end',['../structifx___peak___search___config__t.html#ab031779afe0bb8dc14a2af6354e24aa7',1,'ifx_Peak_Search_Config_t']]],
+  ['search_5fzone_5fstart_2139',['search_zone_start',['../structifx___peak___search___config__t.html#a086a604d01bf621e310a0f62a784fe76',1,'ifx_Peak_Search_Config_t']]],
+  ['selected_5frx_2140',['selected_rx',['../structifx___angle_capon___config__t.html#a7b32cc4e42b5d316f9b2db19e3113992',1,'ifx_AngleCapon_Config_t']]],
+  ['sensor_5ftype_2141',['sensor_type',['../structifx___radar___sensor___list___entry__t.html#a6c58e71c4ea76f49ed941b3de1698f8e',1,'ifx_Radar_Sensor_List_Entry_t']]],
+  ['shape_2142',['shape',['../structifx___avian___shape___set__s.html#ace069a66b38b74d0c768d67f2a56f8dc',1,'ifx_Avian_Shape_Set_s']]],
+  ['size_2143',['size',['../structifx___window___config__t.html#ab2c6b258f02add8fdf4cfc7c371dd772',1,'ifx_Window_Config_t']]],
+  ['slices_2144',['slices',['../structifx___cube___r__s.html#a440b7dfc416cab95cb2d38e7a4125df8',1,'ifx_Cube_R_s::slices()'],['../structifx___cube___c__s.html#a440b7dfc416cab95cb2d38e7a4125df8',1,'ifx_Cube_C_s::slices()']]],
+  ['spect_5fthreshold_2145',['spect_threshold',['../structifx___r_d_m___config__t.html#adb93ab255f33613617cad8875e760bc4',1,'ifx_RDM_Config_t::spect_threshold()'],['../structifx___r_s___config__t.html#adb93ab255f33613617cad8875e760bc4',1,'ifx_RS_Config_t::spect_threshold()']]],
+  ['speed_2146',['speed',['../structifx___motion_angle___result__t.html#a1442a84d924d66b803b9c09ed197fc5b',1,'ifx_MotionAngle_Result_t::speed()'],['../structifx___target__t.html#a1442a84d924d66b803b9c09ed197fc5b',1,'ifx_Target_t::speed()']]],
+  ['speed_5fresolution_5fm_5fs_2147',['speed_resolution_m_s',['../structifx___avian___metrics___limits__t.html#a0625e48341fc74a400716bd1355fcf15',1,'ifx_Avian_Metrics_Limits_t::speed_resolution_m_s()'],['../structifx___avian___metrics__t.html#a5050f7fa8ddb54b82c545bdd8552c4a9',1,'ifx_Avian_Metrics_t::speed_resolution_m_s()']]],
+  ['start_5ffrequency_5fhz_2148',['start_frequency_Hz',['../structifx___avian___config__t.html#a6262f5ec49f88bd54c5f3404f65f0dc9',1,'ifx_Avian_Config_t']]],
+  ['state_5fchange_5fcb_2149',['state_change_cb',['../structifx___presence_sensing___config__t.html#ac2e81d10e14489c3f1b75d91f36248e6',1,'ifx_PresenceSensing_Config_t']]],
+  ['state_5fstatus_5fcb_2150',['state_status_cb',['../structifx___presence_sensing___config__t.html#ad417d36be2e3ef66e090f254e195654f',1,'ifx_PresenceSensing_Config_t']]],
+  ['step_2151',['step',['../structifx___l_t_r11___config___limits__t.html#a2cd6cee747e102d6259b37eb31894f43',1,'ifx_LTR11_Config_Limits_t']]],
+  ['stride_2152',['stride',['../structifx___cube___r__s.html#a681df5c63c69e505f7f5eda6c87c222f',1,'ifx_Cube_R_s::stride()'],['../structifx___cube___c__s.html#a681df5c63c69e505f7f5eda6c87c222f',1,'ifx_Cube_C_s::stride()'],['../structifx___matrix___r__s.html#a2e3b545d54c8cd6fff68ab1109e4740e',1,'ifx_Matrix_R_s::stride()'],['../structifx___matrix___c__s.html#a2e3b545d54c8cd6fff68ab1109e4740e',1,'ifx_Matrix_C_s::stride()'],['../structifx___vector___r__s.html#a981556a4e63b7b6d9f94975c7a8930ab',1,'ifx_Vector_R_s::stride()'],['../structifx___vector___c__s.html#a981556a4e63b7b6d9f94975c7a8930ab',1,'ifx_Vector_C_s::stride()']]]
+];

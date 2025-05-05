@@ -1,0 +1,21 @@
+var searchData=
+[
+  ['target_5fdetection_2153',['target_detection',['../structifx___advanced___motion___sensing___output__t.html#a33f6753b9df424c4f867064c8b81da4d',1,'ifx_Advanced_Motion_Sensing_Output_t']]],
+  ['target_5fdistance_5fm_2154',['target_distance_m',['../structifx___presence_sensing___result__t.html#a1bbb02105727f1736f7b9cd71182cf5d',1,'ifx_PresenceSensing_Result_t']]],
+  ['target_5fsignal_5fstrength_2155',['target_signal_strength',['../structifx___presence_sensing___result__t.html#a7bf546c53f4657346d8eca275e360c90',1,'ifx_PresenceSensing_Result_t']]],
+  ['target_5fspeed_5fm_5fs_2156',['target_speed_m_s',['../structifx___presence_sensing___result__t.html#ab3e340067f0e46661138db60bd345d9f',1,'ifx_PresenceSensing_Result_t']]],
+  ['test_5fsignal_5fconfigs_2157',['test_signal_configs',['../structifx___avian___c_w___config__t.html#a1eebf3e8b7bcd0c38801f7e790454ea2',1,'ifx_Avian_CW_Config_t']]],
+  ['test_5fsignal_5ffreq_5frange_5fhz_2158',['test_signal_freq_range_Hz',['../structifx___avian___c_w___config__t.html#a97f9830b0606f870f36552353f50476e',1,'ifx_Avian_CW_Config_t']]],
+  ['threshold_5ffactor_2159',['threshold_factor',['../structifx___peak___search___config__t.html#ad3758d5515690877e2250ef192eef210',1,'ifx_Peak_Search_Config_t']]],
+  ['threshold_5ffactor_5fabsence_5ffine_5fpeak_2160',['threshold_factor_absence_fine_peak',['../structifx___presence_sensing___config__t.html#a4fbe2cdc44aeb20b3d833d75266cd3c2',1,'ifx_PresenceSensing_Config_t']]],
+  ['threshold_5ffactor_5fabsence_5fpeak_2161',['threshold_factor_absence_peak',['../structifx___presence_sensing___config__t.html#afedde064a43f8e2beae6bd6a3ec859aa',1,'ifx_PresenceSensing_Config_t']]],
+  ['threshold_5ffactor_5fpresence_5fpeak_2162',['threshold_factor_presence_peak',['../structifx___presence_sensing___config__t.html#a9453e4b8aa781ca6f8ad579dd6fea0d9',1,'ifx_PresenceSensing_Config_t']]],
+  ['threshold_5foffset_2163',['threshold_offset',['../structifx___peak___search___config__t.html#aa355556241f4f20ce4fbb5f4c2789a58',1,'ifx_Peak_Search_Config_t']]],
+  ['tracking_2164',['tracking',['../structifx___avian___a_d_c___config__t.html#a9500f6b61a15b2d8531b1a3f5cc2d210',1,'ifx_Avian_ADC_Config_t']]],
+  ['tx_5fdac_5fvalue_2165',['tx_dac_value',['../structifx___avian___c_w___config__t.html#a53085aca96633fd2b3144c0bdaea8951',1,'ifx_Avian_CW_Config_t']]],
+  ['tx_5fmask_2166',['tx_mask',['../structifx___avian___c_w___config__t.html#a875beafe9b2b99460ca9d24ebb0fa8f3',1,'ifx_Avian_CW_Config_t::tx_mask()'],['../structifx___avian___config__t.html#a875beafe9b2b99460ca9d24ebb0fa8f3',1,'ifx_Avian_Config_t::tx_mask()'],['../structifx___avian___metrics___limits__t.html#a76af05472ad03965900300b4571c692d',1,'ifx_Avian_Metrics_Limits_t::tx_mask()'],['../structifx___avian___metrics__t.html#a875beafe9b2b99460ca9d24ebb0fa8f3',1,'ifx_Avian_Metrics_t::tx_mask()']]],
+  ['tx_5fmode_2167',['tx_mode',['../structifx___avian___antenna___setup__s.html#a2cdf02113fb9c15b11d571ea10bd2d05',1,'ifx_Avian_Antenna_Setup_s']]],
+  ['tx_5fpower_2168',['tx_power',['../structifx___avian___shape___config__s.html#a933494b037d387c3ebda7cdba7aee20b',1,'ifx_Avian_Shape_Config_s']]],
+  ['tx_5fpower_5flevel_2169',['tx_power_level',['../structifx___avian___config__t.html#a91d1498d81e7e64c543047a24469b017',1,'ifx_Avian_Config_t::tx_power_level()'],['../structifx___avian___metrics___limits__t.html#aa806ac7bdb6554acf52efeaa096b5221',1,'ifx_Avian_Metrics_Limits_t::tx_power_level()'],['../structifx___avian___metrics__t.html#a91d1498d81e7e64c543047a24469b017',1,'ifx_Avian_Metrics_t::tx_power_level()'],['../structifx___l_t_r11___config__t.html#a0d3f0b4851ed7a2987a1b19153ab50cf',1,'ifx_LTR11_Config_t::tx_power_level()']]],
+  ['type_2170',['type',['../structifx___window___config__t.html#a01a3f8194c4c8507f7f65d4cb9c25697',1,'ifx_Window_Config_t::type()'],['../structifx___r_f___shield___info__t.html#a53b04612fe550f90d2f75540a663689b',1,'ifx_RF_Shield_Info_t::type()'],['../structifx___recording___entry__t.html#aa37bec7956e2b2b42216771cf596ca74',1,'ifx_Recording_Entry_t::type()']]]
+];

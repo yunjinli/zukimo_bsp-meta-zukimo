@@ -1,0 +1,10 @@
+<map id="/home/jenkins/jenkins&#45;ci/workspace/er_release_release&#45;branch&#45;v3.3.1@2/sdk/c/ifxRadar/SpectrumAxis.h" name="/home/jenkins/jenkins&#45;ci/workspace/er_release_release&#45;branch&#45;v3.3.1@2/sdk/c/ifxRadar/SpectrumAxis.h">
+<area shape="rect" id="node1" title="API for Spectrum Axis used by Range spectrum, Range Doppler and Range Angle Map modules." alt="" coords="21,5,247,76"/>
+<area shape="rect" id="node2" href="$ifx_base_2_types_8h.html" title="Definitions of data types used within the SDK." alt="" coords="76,273,200,300"/>
+<area shape="rect" id="node6" href="$_math_8h.html" title="API for Mathematical operations." alt="" coords="74,124,194,151"/>
+<area shape="rect" id="node8" href="$_f_f_t_8h.html" title="API for Fast Fourier Transform (FFT)" alt="" coords="218,124,325,151"/>
+<area shape="rect" id="node3" title=" " alt="" coords="5,348,76,375"/>
+<area shape="rect" id="node4" title=" " alt="" coords="101,348,175,375"/>
+<area shape="rect" id="node5" title=" " alt="" coords="199,348,282,375"/>
+<area shape="rect" id="node7" href="$_vector_8h.html" title="API for operations on Vector data structures." alt="" coords="125,199,252,225"/>
+</map>

@@ -1,0 +1,6 @@
+<map id="ifx_Avian_CW_Config_t" name="ifx_Avian_CW_Config_t">
+<area shape="rect" id="node1" title="Used to define a default set for the configuration values including their min and max values." alt="" coords="360,64,531,91"/>
+<area shape="rect" id="node2" href="$structifx___avian___a_d_c___config__t.html" title="Defines the structure for the ADC configuration." alt="" coords="5,5,183,32"/>
+<area shape="rect" id="node3" href="$structifx___avian___baseband___config__t.html" title="Defines the structure for the Baseband configuration." alt="" coords="17,57,171,98"/>
+<area shape="rect" id="node4" href="$structifx___avian___test___signal___generator__t.html" title="Defines the structure for the Test Signal configuration." alt="" coords="13,122,175,163"/>
+</map>

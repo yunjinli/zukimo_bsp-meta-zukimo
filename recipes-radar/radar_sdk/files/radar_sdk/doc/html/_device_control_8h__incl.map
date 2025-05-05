@@ -1,0 +1,19 @@
+<map id="/home/jenkins/jenkins&#45;ci/workspace/er_release_release&#45;branch&#45;v3.3.1@2/sdk/c/ifxAvian/DeviceControl.h" name="/home/jenkins/jenkins&#45;ci/workspace/er_release_release&#45;branch&#45;v3.3.1@2/sdk/c/ifxAvian/DeviceControl.h">
+<area shape="rect" id="node1" title="API for Radar device control operations." alt="" coords="291,5,517,76"/>
+<area shape="rect" id="node2" href="$ifx_base_2_types_8h.html" title="Definitions of data types used within the SDK." alt="" coords="357,437,481,464"/>
+<area shape="rect" id="node6" href="$_error_8h.html" title="API for error handling." alt="" coords="69,124,187,151"/>
+<area shape="rect" id="node9" href="$_list_8h.html" title=" " alt="" coords="390,199,501,225"/>
+<area shape="rect" id="node10" href="$_cube_8h.html" title="API for operations on Cube data structures." alt="" coords="237,124,357,151"/>
+<area shape="rect" id="node15" href="$_device_config_8h.html" title="API for Radar device configuration." alt="" coords="577,199,754,225"/>
+<area shape="rect" id="node16" href="$_radar_device_common_8h.html" title="Header for ifxRadarDeviceCommon." alt="" coords="627,273,808,315"/>
+<area shape="rect" id="node17" href="$_recording_8h.html" title="This file defines functions to handle Recordings." alt="" coords="442,124,627,151"/>
+<area shape="rect" id="node3" title=" " alt="" coords="286,512,357,539"/>
+<area shape="rect" id="node4" title=" " alt="" coords="381,512,456,539"/>
+<area shape="rect" id="node5" title=" " alt="" coords="480,512,563,539"/>
+<area shape="rect" id="node7" href="$_log_8h.html" title="API for logging." alt="" coords="43,199,154,225"/>
+<area shape="rect" id="node8" title=" " alt="" coords="43,281,109,307"/>
+<area shape="rect" id="node11" href="$_defines_8h.html" title="Internal definitions used by standard math.h functions as Macros, to use float or double precision." alt="" coords="229,199,365,225"/>
+<area shape="rect" id="node14" href="$_matrix_8h.html" title="API for operations on Matrix data structures." alt="" coords="185,281,314,307"/>
+<area shape="rect" id="node12" href="$_math_8h.html" title="API for Mathematical operations." alt="" coords="338,281,406,307"/>
+<area shape="rect" id="node13" href="$_vector_8h.html" title="API for operations on Vector data structures." alt="" coords="254,363,381,389"/>
+</map>

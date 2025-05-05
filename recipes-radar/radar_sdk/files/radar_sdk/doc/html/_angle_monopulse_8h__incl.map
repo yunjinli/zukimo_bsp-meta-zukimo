@@ -1,0 +1,11 @@
+<map id="/home/jenkins/jenkins&#45;ci/workspace/er_release_release&#45;branch&#45;v3.3.1@2/sdk/c/ifxRadar/AngleMonopulse.h" name="/home/jenkins/jenkins&#45;ci/workspace/er_release_release&#45;branch&#45;v3.3.1@2/sdk/c/ifxRadar/AngleMonopulse.h">
+<area shape="rect" id="node1" title="API for Phase Monopulse algorithm." alt="" coords="71,5,314,76"/>
+<area shape="rect" id="node2" href="$ifx_base_2_types_8h.html" title="Definitions of data types used within the SDK." alt="" coords="76,423,200,449"/>
+<area shape="rect" id="node6" href="$_complex_8h.html" title="API for operations on complex numbers." alt="" coords="120,124,265,151"/>
+<area shape="rect" id="node9" href="$_vector_8h.html" title="API for operations on Vector data structures." alt="" coords="201,348,328,375"/>
+<area shape="rect" id="node3" title=" " alt="" coords="5,497,76,524"/>
+<area shape="rect" id="node4" title=" " alt="" coords="101,497,175,524"/>
+<area shape="rect" id="node5" title=" " alt="" coords="199,497,282,524"/>
+<area shape="rect" id="node7" href="$_defines_8h.html" title="Internal definitions used by standard math.h functions as Macros, to use float or double precision." alt="" coords="150,199,286,225"/>
+<area shape="rect" id="node8" href="$_math_8h.html" title="API for Mathematical operations." alt="" coords="184,273,252,300"/>
+</map>

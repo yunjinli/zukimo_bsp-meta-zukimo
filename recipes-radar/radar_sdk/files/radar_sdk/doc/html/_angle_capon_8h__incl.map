@@ -1,0 +1,12 @@
+<map id="/home/jenkins/jenkins&#45;ci/workspace/er_release_release&#45;branch&#45;v3.3.1@2/sdk/c/ifxRadar/AngleCapon.h" name="/home/jenkins/jenkins&#45;ci/workspace/er_release_release&#45;branch&#45;v3.3.1@2/sdk/c/ifxRadar/AngleCapon.h">
+<area shape="rect" id="node1" title="API for the 1&#45;D Angle Capon algorithm." alt="" coords="5,5,219,76"/>
+<area shape="rect" id="node2" href="$ifx_base_2_types_8h.html" title="Definitions of data types used within the SDK." alt="" coords="99,423,223,449"/>
+<area shape="rect" id="node6" href="$_cube_8h.html" title="API for operations on Cube data structures." alt="" coords="105,124,225,151"/>
+<area shape="rect" id="node3" title=" " alt="" coords="29,497,99,524"/>
+<area shape="rect" id="node4" title=" " alt="" coords="124,497,199,524"/>
+<area shape="rect" id="node5" title=" " alt="" coords="223,497,305,524"/>
+<area shape="rect" id="node7" href="$_defines_8h.html" title="Internal definitions used by standard math.h functions as Macros, to use float or double precision." alt="" coords="97,199,233,225"/>
+<area shape="rect" id="node10" href="$_matrix_8h.html" title="API for operations on Matrix data structures." alt="" coords="218,273,347,300"/>
+<area shape="rect" id="node8" href="$_math_8h.html" title="API for Mathematical operations." alt="" coords="126,273,194,300"/>
+<area shape="rect" id="node9" href="$_vector_8h.html" title="API for operations on Vector data structures." alt="" coords="149,348,275,375"/>
+</map>

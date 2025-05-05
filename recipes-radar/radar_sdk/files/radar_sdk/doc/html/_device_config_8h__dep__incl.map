@@ -1,0 +1,14 @@
+<map id="/home/jenkins/jenkins&#45;ci/workspace/er_release_release&#45;branch&#45;v3.3.1@2/sdk/c/ifxAvian/DeviceConfig.h" name="/home/jenkins/jenkins&#45;ci/workspace/er_release_release&#45;branch&#45;v3.3.1@2/sdk/c/ifxAvian/DeviceConfig.h">
+<area shape="rect" id="node1" title="API for Radar device configuration." alt="" coords="338,5,557,76"/>
+<area shape="rect" id="node2" href="$_avian_8h.html" title="Header for ifxAvian." alt="" coords="246,509,436,580"/>
+<area shape="rect" id="node3" href="$_constant_wave_control_8h.html" title="Header for Constant Wave Control. It provides APIs to use an Avian device in constant wave mode...." alt="" coords="29,391,304,461"/>
+<area shape="rect" id="node4" href="$_device_control_8h.html" title="API for Radar device control operations." alt="" coords="335,265,560,335"/>
+<area shape="rect" id="node7" href="$_presence_sensing_8h.html" title="API for Presence Sensing algorithm." alt="" coords="809,391,1054,461"/>
+<area shape="rect" id="node9" href="$_motion_angle_8h.html" title=" " alt="" coords="636,131,897,202"/>
+<area shape="rect" id="node10" href="$_segmentation_8h.html" title="API for Segmentation and Seamless Tracking algorithm." alt="" coords="921,124,1132,209"/>
+<area shape="rect" id="node12" href="$_recording_8h.html" title="This file defines functions to handle Recordings." alt="" coords="334,131,561,202"/>
+<area shape="rect" id="node5" href="$_metrics_8h.html" title="API for Metrics." alt="" coords="379,391,570,461"/>
+<area shape="rect" id="node6" href="$_shapes_8h.html" title=" " alt="" coords="594,391,784,461"/>
+<area shape="rect" id="node8" href="$_radar_8h.html" title="Header for ifxRadar." alt="" coords="836,509,1027,580"/>
+<area shape="rect" id="node11" href="$_radar_segmentation_8h.html" title="Header for ifxRadarSegmentation." alt="" coords="921,257,1132,343"/>
+</map>

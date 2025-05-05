@@ -1,0 +1,20 @@
+<map id="/home/jenkins/jenkins&#45;ci/workspace/er_release_release&#45;branch&#45;v3.3.1@2/sdk/c/ifxAvian/ConstantWaveControl.h" name="/home/jenkins/jenkins&#45;ci/workspace/er_release_release&#45;branch&#45;v3.3.1@2/sdk/c/ifxAvian/ConstantWaveControl.h">
+<area shape="rect" id="node1" title="Header for Constant Wave Control. It provides APIs to use an Avian device in constant wave mode...." alt="" coords="223,5,498,76"/>
+<area shape="rect" id="node2" href="$_device_control_8h.html" title="API for Radar device control operations." alt="" coords="335,124,517,151"/>
+<area shape="rect" id="node16" href="$_device_config_8h.html" title="API for Radar device configuration." alt="" coords="195,273,372,300"/>
+<area shape="rect" id="node3" href="$ifx_base_2_types_8h.html" title="Definitions of data types used within the SDK." alt="" coords="399,512,523,539"/>
+<area shape="rect" id="node7" href="$_error_8h.html" title="API for error handling." alt="" coords="498,199,615,225"/>
+<area shape="rect" id="node10" href="$_list_8h.html" title=" " alt="" coords="5,273,116,300"/>
+<area shape="rect" id="node11" href="$_cube_8h.html" title="API for operations on Cube data structures." alt="" coords="645,199,765,225"/>
+<area shape="rect" id="node17" href="$_radar_device_common_8h.html" title="Header for ifxRadarDeviceCommon." alt="" coords="242,348,423,389"/>
+<area shape="rect" id="node18" href="$_recording_8h.html" title="This file defines functions to handle Recordings." alt="" coords="73,199,259,225"/>
+<area shape="rect" id="node4" title=" " alt="" coords="328,587,399,613"/>
+<area shape="rect" id="node5" title=" " alt="" coords="423,587,498,613"/>
+<area shape="rect" id="node6" title=" " alt="" coords="522,587,605,613"/>
+<area shape="rect" id="node8" href="$_log_8h.html" title="API for logging." alt="" coords="501,273,612,300"/>
+<area shape="rect" id="node9" title=" " alt="" coords="549,355,615,382"/>
+<area shape="rect" id="node12" href="$_defines_8h.html" title="Internal definitions used by standard math.h functions as Macros, to use float or double precision." alt="" coords="750,273,886,300"/>
+<area shape="rect" id="node15" href="$_matrix_8h.html" title="API for operations on Matrix data structures." alt="" coords="640,355,769,382"/>
+<area shape="rect" id="node13" href="$_math_8h.html" title="API for Mathematical operations." alt="" coords="793,355,861,382"/>
+<area shape="rect" id="node14" href="$_vector_8h.html" title="API for operations on Vector data structures." alt="" coords="641,437,768,464"/>
+</map>

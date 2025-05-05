@@ -1,0 +1,2 @@
+add_executable(app_presence_detection app_presence_detection.c)
+target_link_libraries(app_presence_detection app_common sdk_radar)

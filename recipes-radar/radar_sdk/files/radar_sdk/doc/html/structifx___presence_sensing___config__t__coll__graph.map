@@ -1,0 +1,4 @@
+<map id="ifx_PresenceSensing_Config_t" name="ifx_PresenceSensing_Config_t">
+<area shape="rect" id="node1" title="PresenceSensing configuration." alt="" coords="5,95,161,136"/>
+<area shape="rect" id="node2" href="$structifx___avian___config__t.html" title="Defines the structure for acquisition of time domain data related settings." alt="" coords="12,5,155,32"/>
+</map>

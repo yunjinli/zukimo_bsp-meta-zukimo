@@ -1,0 +1,15 @@
+<map id="/home/jenkins/jenkins&#45;ci/workspace/er_release_release&#45;branch&#45;v3.3.1@2/sdk/c/ifxBase/Log.h" name="/home/jenkins/jenkins&#45;ci/workspace/er_release_release&#45;branch&#45;v3.3.1@2/sdk/c/ifxBase/Log.h">
+<area shape="rect" id="node1" title="API for logging." alt="" coords="322,5,513,76"/>
+<area shape="rect" id="node2" href="$_base_8h.html" title="Header for ifxBase." alt="" coords="206,250,397,321"/>
+<area shape="rect" id="node3" href="$_error_8h.html" title="API for error handling." alt="" coords="438,124,629,195"/>
+<area shape="rect" id="node4" href="$_device_control_8h.html" title="API for Radar device control operations." alt="" coords="421,250,646,321"/>
+<area shape="rect" id="node11" href="$_device_l_t_r11_control_8h.html" title="API for 60GHz Radar device BGT60LTR11 to configure and get raw data." alt="" coords="670,243,928,328"/>
+<area shape="rect" id="node13" href="$_util_8h.html" title="This file defines some utility functions like printing to, reading from files or printing to console...." alt="" coords="953,250,1144,321"/>
+<area shape="rect" id="node5" href="$_avian_8h.html" title="Header for ifxAvian." alt="" coords="204,495,394,565"/>
+<area shape="rect" id="node6" href="$_constant_wave_control_8h.html" title="Header for Constant Wave Control. It provides APIs to use an Avian device in constant wave mode...." alt="" coords="32,376,307,447"/>
+<area shape="rect" id="node7" href="$_metrics_8h.html" title="API for Metrics." alt="" coords="332,376,522,447"/>
+<area shape="rect" id="node8" href="$_shapes_8h.html" title=" " alt="" coords="546,376,737,447"/>
+<area shape="rect" id="node9" href="$_presence_sensing_8h.html" title="API for Presence Sensing algorithm." alt="" coords="762,376,1007,447"/>
+<area shape="rect" id="node10" href="$_radar_8h.html" title="Header for ifxRadar." alt="" coords="789,495,980,565"/>
+<area shape="rect" id="node12" href="$_doppler_l_t_r11_8h.html" title="Main header file for ifxDopplerLTR11." alt="" coords="1031,376,1308,447"/>
+</map>

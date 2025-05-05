@@ -1,0 +1,15 @@
+{
+    "device_config": {
+        "fmcw_scene": {
+            "rx_antennas": [1,2],
+            "tx_antennas": [1],
+            "tx_power_level": 31,
+            "if_gain_dB": 33,
+            "range_resolution_m": 0.15,
+            "max_range_m": 9.59,
+            "max_speed_m_s": 2.45,
+            "speed_resolution_m_s": 0.08,
+            "frame_repetition_time_s": 0.1
+        }
+    }
+}

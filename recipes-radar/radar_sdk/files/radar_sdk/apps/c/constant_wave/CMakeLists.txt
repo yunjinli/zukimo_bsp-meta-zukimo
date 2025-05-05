@@ -1,0 +1,2 @@
+add_executable(app_constant_wave app_constant_wave.c constant_wave_defaults.h)
+target_link_libraries(app_constant_wave sdk_avian)

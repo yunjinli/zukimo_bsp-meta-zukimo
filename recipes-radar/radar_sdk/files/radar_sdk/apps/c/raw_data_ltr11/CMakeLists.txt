@@ -1,0 +1,2 @@
+add_executable(app_raw_data_ltr11 app_raw_data.c)
+target_link_libraries(app_raw_data_ltr11 sdk_doppler_ltr11)
