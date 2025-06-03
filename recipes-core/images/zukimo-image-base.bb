@@ -24,6 +24,10 @@ IMAGE_INSTALL:append = "            \
     packagegroup-zukimo-net         \
     gen-revision-file               \
     radar-sdk                       \
+    receiver                        \
+    python3                         \
+    python3-pickleshare             \
+    python3-numpy                   \
 "
 
 # Disable nfs server, when needed add kernel config for nfs fs
