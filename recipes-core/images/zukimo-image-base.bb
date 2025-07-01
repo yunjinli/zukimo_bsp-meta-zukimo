@@ -28,6 +28,7 @@ IMAGE_INSTALL:append = "            \
     python3                         \
     python3-pickleshare             \
     python3-numpy                   \
+    radar-gesture-recognition       \
 "
 
 # Disable nfs server, when needed add kernel config for nfs fs
