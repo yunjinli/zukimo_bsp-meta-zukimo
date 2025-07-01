@@ -5,7 +5,7 @@ SRC_URI = "file://cpp_inference"
 S = "${WORKDIR}/cpp_inference"
 
 inherit cmake
-INHERIT += "noexec"
+# INHERIT += "noexec"
 
 do_install() {
     install -d ${D}/home/root/radar_gesture_inference
