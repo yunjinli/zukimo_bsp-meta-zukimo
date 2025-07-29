@@ -17,15 +17,15 @@
 #include <iomanip>
 #include <cmath>
 #include <cstring>
+#include <iostream>
+#include <vector>
+#include <cstdint>
+#include <cstring>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <unistd.h>
+#include <arpa/inet.h>
 
-#include <data/samples/class0_input.h>
-#include <data/samples/class0_softmax.h>
-#include <data/samples/class1_input.h>
-#include <data/samples/class1_softmax.h>
-#include <data/samples/class2_input.h>
-#include <data/samples/class2_softmax.h>
-#include <data/samples/class3_input.h>
-#include <data/samples/class3_softmax.h>
 
 using namespace tvm::runtime;
 
@@ -41,7 +41,85 @@ void InitDSORegistry();  // You will implement this
 }
 }
 
+constexpr int PORT = 5005;
+
+bool recv_all(int sock, uint8_t* buffer, size_t size) {
+    size_t received = 0;
+    while (received < size) {
+        ssize_t n = recv(sock, buffer + received, size - received, 0);
+        if (n <= 0) return false;
+        received += n;
+    }
+    return true;
+}
+
 int main() {
+    // // Setting up the listener
+    int server_fd, client_fd;
+    sockaddr_in address{};
+    socklen_t addrlen = sizeof(address);
+
+    // Create socket
+    server_fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (server_fd == 0) {
+        perror("socket failed");
+        return 1;
+    }
+
+    // Bind socket
+    address.sin_family = AF_INET;
+    address.sin_addr.s_addr = INADDR_ANY;
+    address.sin_port = htons(PORT);
+    if (bind(server_fd, (sockaddr*)&address, sizeof(address)) < 0) {
+        perror("bind failed");
+        return 1;
+    }
+
+    // Listen for connection
+    if (listen(server_fd, 1) < 0) {
+        perror("listen");
+        return 1;
+    }
+
+    std::cout << "[Receiver] Waiting for connection on port " << PORT << "...\n";
+
+    client_fd = accept(server_fd, (sockaddr*)&address, &addrlen);
+    if (client_fd < 0) {
+        perror("accept");
+        return 1;
+    }
+    std::cout << "[Receiver] Connected to client.\n";
+
+    // // Define server details (original device IP & port)
+    // const char* SERVER_IP = "127.0.0.1"; // "192.168.1.1"; // Raspi IP
+    // const int SERVER_PORT = 5006;  
+
+    // // Create socket
+    // int sock = socket(AF_INET, SOCK_STREAM, 0);
+    // if (sock < 0) {
+    //     perror("Socket creation error");
+    //     return 1;
+    // }
+    // std::cout << "Socket created successfully.\n";
+
+    // // Prepare server address struct
+    // sockaddr_in serv_addr;
+    // serv_addr.sin_family = AF_INET;
+    // serv_addr.sin_port = htons(SERVER_PORT);
+    // if (inet_pton(AF_INET, SERVER_IP, &serv_addr.sin_addr) <= 0) {
+    //     std::cerr << "Invalid address/ Address not supported\n";
+    //     return 1;
+    // }
+    // std::cout << "Connecting to server at " << SERVER_IP << ":" << SERVER_PORT << "...\n";
+
+    // // Connect to server (Python listener)
+    // if (connect(sock, (struct sockaddr*)&serv_addr, sizeof(serv_addr)) < 0) {
+    //     perror("Connection Failed");
+    //     return 1;
+    // }
+    // std::cout << "Connected to server.\n";
+
+    // // Initializing for prediction
     // === Allocate input/output buffers ===
     float input_data[1 * 2 * 32 * 10];  // shape: [1, 2, 32, 10]
     float output_data[1 * 4];          // shape: [1, 4]
@@ -52,49 +130,88 @@ int main() {
     inputs.serving_default_input_0 = input_data;
     outputs.PartitionedCall_0 = output_data;
 
-    // Create sample array
-    std::vector<Sample> samples = {
-        {class0_input, class0_softmax, "class0"},
-        {class1_input, class1_softmax, "class1"},
-        {class2_input, class2_softmax, "class2"},
-        {class3_input, class3_softmax, "class3"},
-    };
-
-    for (const auto& sample : samples) {
-        std::cout << "\n===== Inference for " << sample.label << " =====\n";
-
-        std::memcpy(input_data, sample.input, sizeof(input_data));
-
-        int ret = tvmgen_default_run(&inputs, &outputs);
-        if (ret != 0) {
-            std::cerr << "Error running model for " << sample.label << "\n";
-            continue;
+    while (true) {
+        uint8_t length_buf[4];
+        if (!recv_all(client_fd, length_buf, 4)){
+            std::cout << "Data source disconnected or error occurred.\n" << std::endl;
+            break;
         }
 
+        // Convert big-endian to host uint32_t
+        uint32_t payload_size = 
+              (length_buf[0] << 24) | 
+              (length_buf[1] << 16) | 
+              (length_buf[2] << 8)  | 
+              (length_buf[3]);
+
+        std::vector<uint8_t> payload(payload_size);
+        if (!recv_all(client_fd, payload.data(), payload_size)){
+            std::cout << "Failed to receive complete payload. Disconnected or error occurred.\n" << std::endl;
+            break;
+        }
+
+        std::cout << "[Frame] Received payload of size: " << payload_size << " bytes.\n";
+
+        // size_t num_floats = payload_size / sizeof(float);
+        // float* data = reinterpret_cast<float*>(payload.data());
+
+        // constexpr size_t expected_floats = 1 * 2 * 32 * 10;
+        // if (num_floats != expected_floats) {
+        //     std::cerr << "ERROR: Received frame does not match input size! "
+        //               << "Expected " << expected_floats << " floats, got " << num_floats << std::endl;
+        //     continue;
+        // }
+
+        // std::memcpy(input_data, data, num_floats * sizeof(float));
+
+        std::memcpy(input_data, payload.data(), payload.size());
+        int ret = tvmgen_default_run(&inputs, &outputs);
         std::cout << "Logits:\n";
         for (int i = 0; i < 4; ++i) {
             std::cout << std::fixed << std::setprecision(5) << output_data[i] << " ";
         }
         std::cout << "\n";
+        
+        // // Exporting the output to a file via TCP
+        // // Define server details (original device IP & port)
+        const char* SERVER_IP = "192.168.1.1"; // "192.168.1.1"; // Raspi IP
+        const int SERVER_PORT = 5006;  
 
-        // Softmax
-        float sum_exp = 0.0f;
-        std::vector<float> probs(4);
-        for (int i = 0; i < 4; ++i) {
-            probs[i] = std::exp(output_data[i]);
-            sum_exp += probs[i];
-        }
-        for (int i = 0; i < 4; ++i) {
-            probs[i] /= sum_exp;
+        // Create socket
+        int sock = socket(AF_INET, SOCK_STREAM, 0);
+        if (sock < 0) {
+            perror("Socket creation error");
+            continue;;
         }
 
-        std::cout << "Softmax Output vs Expected:\n";
-        for (int i = 0; i < 4; ++i) {
-            std::cout << "Output[" << i << "] = " << std::fixed << std::setprecision(5)
-                      << probs[i] << " | Expected: " << sample.expected_softmax[i] << "\n";
+        // Prepare server address struct
+        sockaddr_in serv_addr;
+        serv_addr.sin_family = AF_INET;
+        serv_addr.sin_port = htons(SERVER_PORT);
+        inet_pton(AF_INET, SERVER_IP, &serv_addr.sin_addr);
+
+        if (connect(sock, (struct sockaddr*)&serv_addr, sizeof(serv_addr)) < 0) {
+            perror("Connection to Python Failed");
+            close(sock);
+            continue;
         }
+
+        // Send data length first
+        uint32_t data_len = sizeof(output_data); // Number of bytes in the float array
+        uint32_t data_len_n = htonl(data_len);
+        send(sock, &data_len_n, sizeof(data_len_n), 0);
+
+        std::cout << "Sending " << data_len << " bytes of output data...\n";
+
+        // Sending the data
+        send(sock, output_data, data_len, 0); // Send array directly
+
+        std::cout << "Sent " << data_len << " bytes!\n";
+
+        // Close the socket
+        close(sock);
+
     }
 
     return 0;
 }
-
